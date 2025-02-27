@@ -1,0 +1,65 @@
+#=========================================================================
+# run_test.yml
+#=========================================================================
+# Workflow to run PyMTL3 tests
+
+name: Run Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        test_cmd:
+          - ../lab2_xcel
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+       
+      - name: Install verilator
+        run: |
+          wget --progress=dot:giga https://github.com/pymtl/verilator-ci-cache/raw/master/verilator-github-actions-5.032.tar.gz
+          echo $PWD
+          whoami
+          tar -C ${HOME} -xzf verilator-github-actions-5.032.tar.gz
+          echo "${HOME}/verilator/bin" >> $GITHUB_PATH
+          echo "PKG_CONFIG_PATH=${HOME}/verilator/share/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
+
+      - name: Check verilator
+        run: |
+          which verilator
+          verilator --version
+          pkg-config --modversion verilator
+          pkg-config --cflags verilator
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y graphviz
+          pip install --upgrade pip
+          pip install git+https://github.com/cornell-brg/pymtl3@pymtl4.0-dev
+       
+      - name: Run sim tests
+        timeout-minutes: 10
+        run: |
+          mkdir -p sim/build && cd sim/build
+          pytest ${{ matrix.test_cmd }}
+
+  app:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run app tests
+        timeout-minutes: 5
+        run: |
+          mkdir -p app/build && cd app/build
+          ../configure
+          make check

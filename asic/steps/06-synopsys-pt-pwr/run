@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#=========================================================================
+# 06-synopsys-pt-pwr
+#=========================================================================
+
+# Stop on error and echo all commands
+
+set -e
+trap 'echo "CMD: $BASH_COMMAND"' DEBUG
+
+# Determine RUNDIR
+
+RUNDIR="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))"
+cd $RUNDIR
+
+# Function for running one power analysis
+#  $1 = name of eval
+
+function run_pwr
+{
+  trap 'echo "CMD: $BASH_COMMAND"' DEBUG
+
+  rm -rf $1*.rpt
+
+  export EVALNAME=$1
+
+  pt_shell -f run.tcl | tee $1.log
+}
+
+# List of evals
+
+{% for eval in evals | default([]) -%}
+run_pwr {{eval}}
+{% endfor +%}
+

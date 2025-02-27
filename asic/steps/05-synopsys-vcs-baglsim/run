@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#=========================================================================
+# 05-synopsys-vcs-baglsim
+#=========================================================================
+
+# Stop on error and echo all commands
+
+set -e
+trap 'echo "CMD: $BASH_COMMAND"' DEBUG
+
+# Colors
+
+RED="\e[31m"
+GREEN="\e[32m"
+RESET="\e[0m"
+
+# Determine RUNDIR
+
+RUNDIR="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))"
+cd $RUNDIR
+
+#-------------------------------------------------------------------------
+# Function for running one sim
+#-------------------------------------------------------------------------
+# $1 = name of test
+# $2 = VTB_DUMP_SAIF
+
+function run_sim
+{
+  trap 'echo "CMD: $BASH_COMMAND"' DEBUG
+
+  rm -rf $1 $1.daidir $1.log
+
+  vcs -sverilog -xprop=tmerge -override_timescale=1ns/1ps -top Top \
+    +neg_tchk +sdfverbose \
+    -sdf max:Top.DUT:../04-cadence-innovus-pnr/post-pnr.sdf \
+    +define+CYCLE_TIME={{clock_period}} \
+    +define+VTB_INPUT_DELAY=0.025 \
+    +define+VTB_OUTPUT_DELAY=0.025 \
+    $2 \
+    {{ "+vcs+dumpvars+$1.vcd" if dump_vcd | default(false) }} \
+    -o $1 \
+    +incdir+{{src_dir}} \
+    ${ECE6745_STDCELLS}/stdcells.v \
+    {{src_dir}}/$1_tb.v \
+    ../04-cadence-innovus-pnr/post-pnr.v | tee run.log
+
+  ./$1 | tee -a $1.log
+
+  if grep "\[ passed \]" $1.log > /dev/null 2>&1; then
+    echo -e ">>>> [ ${GREEN}passed${RESET} ] $1" >> $1.log
+  else
+    echo -e ">>>> [ ${RED}FAILED${RESET} ] $1" >> $1.log
+  fi
+}
+
+#-------------------------------------------------------------------------
+# List of tests and evals
+#-------------------------------------------------------------------------
+
+# Tests should not dump SAIF
+
+{% for item in tests | default([]) -%}
+run_sim {{item}} +undefine+VTB_DUMP_SAIF
+{% endfor %}
+
+# Evals should dump SAIF
+
+{% for item in evals | default([]) -%}
+run_sim {{item}} +define+VTB_DUMP_SAIF={{item}}.saif
+{% endfor %}
+
+#-------------------------------------------------------------------------
+# Print results
+#-------------------------------------------------------------------------
+
+echo "" > run.log
+
+{% set tests_and_evals = (tests) + (evals | default([])) -%}
+
+{% for item in tests_and_evals -%}
+grep -h ">>>" {{item}}.log | sed -e 's/>>>>//' >> run.log
+{% endfor %}
+
+echo "" >> run.log
+
+cat run.log
+

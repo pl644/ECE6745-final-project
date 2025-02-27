@@ -1,0 +1,226 @@
+#!/usr/bin/env python
+#=========================================================================
+# summarize-results
+#=========================================================================
+# Parse reports from various EDA tools to summarize as follows:
+#
+#  - Timestamp
+#  - Design name
+#  - Clock period in ns
+#  - Four-state RTL simulation results
+#  - Synthesis setup slack in ns
+#  - Synthesis num stdcells
+#  - Synthesis area in um^2
+#  - Fast-functional gate-level simulation results
+#  - Place-and-route setup slack in ns
+#  - Place-and-route hold slack in ns
+#  - Place-and-route num stdcells
+#  - Place-and-route area in um^2
+#  - Back-annotated gate-level simulation results
+#  - For each evaluation
+#     + Execution time in cycles
+#     + Execution time in ns
+#     + Power in mW
+#     + Energy in nJ
+#
+# Author : Christopher Batten
+# Date   : February 18, 2025
+#
+
+from datetime import datetime
+from pathlib import Path
+
+#-------------------------------------------------------------------------
+# print_sim
+#-------------------------------------------------------------------------
+
+def print_sim( sim_log, name ):
+
+  if not Path(sim_log).exists():
+    print(f" {name:<12}       = {sim_log} not found")
+    return
+
+  num_passed = 0
+  num_failed = 0
+  with open( sim_log, "r" ) as file:
+    for line in file:
+      if "passed" in line:
+        num_passed += 1
+      elif "FAILED" in line:
+        num_failed += 1
+
+  check_str = ""
+  if num_failed > 0:
+    check_str = "\033[31m(all tests must pass!)\033[0m"
+
+  print(f" {name:<12}       = {num_passed}/{num_passed+num_failed} passed {check_str}")
+
+#-------------------------------------------------------------------------
+# print_synth_slack
+#-------------------------------------------------------------------------
+
+def print_synth_slack( synth_slack_report ):
+
+  if not Path(synth_slack_report).exists():
+    print(" synth_setup_slack = {synth_slack_report} not found" )
+    return
+
+  with open( synth_slack_report, "r" ) as file:
+    for line in file:
+      if line.startswith("  slack "):
+        fields = line.split()
+        print(f" synth_setup_slack  = {float(fields[2]):0.4f} ns" )
+
+#-------------------------------------------------------------------------
+# print_synth_area
+#-------------------------------------------------------------------------
+
+def print_synth_area( synth_area_report ):
+
+  if not Path(synth_area_report).exists():
+    print(" synth_num_stdcells = {synth_area_report} not found" )
+    print(" synth_area         = {synth_area_report} not found" )
+    return
+
+  with open( synth_area_report, "r" ) as file:
+    for line in file:
+      if line.startswith("Number of cells:"):
+        fields = line.split(":")
+        print(f" synth_num_stdcells = {fields[1].strip()}" )
+      if line.startswith("Total cell area:"):
+        fields = line.split(":")
+        print(f" synth_area         = {float(fields[1]):0.3f} um^2" )
+
+#-------------------------------------------------------------------------
+# print_slack
+#-------------------------------------------------------------------------
+
+def print_pnr_slack( pnr_timing_setup_report, name ):
+
+  if not Path(pnr_timing_setup_report).exists():
+    print(f" pnr_{name:<12}   = {pnr_timing_setup_report} not found" )
+    return
+
+  slack = "??"
+  with open( pnr_timing_setup_report, "r" ) as file:
+    for line in file:
+      if line[2:12] == "Slack Time":
+        fields = line.split("Time")
+        slack = float(fields[1].strip())
+        break
+
+  check_str = ""
+  if slack < 0:
+    check_str = "\033[31m(must have positive slack!)\033[0m"
+
+  print(f" pnr_{name:<12}   = {fields[1].strip()} ns {check_str}")
+
+#-------------------------------------------------------------------------
+# print_pnr_area
+#-------------------------------------------------------------------------
+
+def print_pnr_area( pnr_area_report ):
+
+  if not Path(pnr_area_report).exists():
+    print(" pnr_num_stdcells   = {pnr_area_report} not found" )
+    print(" pnr_area           = {pnr_area_report} not found" )
+    return
+
+  with open( pnr_area_report, "r" ) as file:
+    for line_num, line in enumerate(file,start=1):
+      if line_num == 3:
+        fields = line.split()
+        print(f" pnr_num_stdcells   = {fields[1]}" )
+        print(f" pnr_area           = {fields[2]} um^2" )
+
+#-------------------------------------------------------------------------
+# print_eval
+#-------------------------------------------------------------------------
+
+def print_eval( name ):
+
+  eval_saif_file    = f"../05-synopsys-vcs-baglsim/{name}.saif"
+  eval_power_report = f"../06-synopsys-pt-pwr/{name}-summary.rpt"
+
+  print("")
+  print(f" {name}")
+
+  if not Path(eval_saif_file).exists():
+    print(f" - {eval_saif_file} not found" )
+    return
+
+  if not Path(eval_power_report).exists():
+    print(f" - {eval_power_report} not found" )
+    return
+
+  exec_time_ns     = 0.0
+  exec_time_cycles = 0.0
+  with open( eval_saif_file, "r" ) as file:
+    for line in file:
+      if line.startswith("(DURATION "):
+        exec_time_ps     = float(line.split()[1].strip(')'))
+        exec_time_ns     = exec_time_ps/1000.0
+        exec_time_cycles = int(exec_time_ns/{{clock_period}})
+
+  power_mw  = 0.0
+  energy_nj = 0.0
+  with open( eval_power_report, "r" ) as file:
+    for line in file:
+      if line.startswith("Total Power"):
+        power_watts     = float(line.split()[3].strip())
+        power_mw        = power_watts*1000.0
+        energy_nj       = power_watts*exec_time_ns
+
+  print(f"  - exec_time = {exec_time_cycles} cycles")
+  print(f"  - exec_time = {exec_time_ns:0.4f} ns")
+  print(f"  - power     = {power_mw:0.4f} mW")
+  print(f"  - energy    = {energy_nj:0.4f} nJ")
+
+#-------------------------------------------------------------------------
+# main
+#-------------------------------------------------------------------------
+
+def main():
+
+  # Print Header
+
+  print("")
+  print(f" timestamp          = {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+  print(f" design_name        = {{design_name}}")
+  print(f" clock_period       = {{clock_period}}")
+
+  # Four-State RTL Simulation
+
+  print_sim("../01-synopsys-vcs-rtlsim/run.log","rtlsim")
+
+  # Synthesis Summary
+
+  print_synth_slack("../02-synopsys-dc-synth/timing.rpt")
+  print_synth_area("../02-synopsys-dc-synth/area.rpt")
+
+  # Fast-Functional Gate-Level Simulation
+
+  print_sim("../03-synopsys-vcs-ffglsim/run.log","ffglsim")
+
+  # Place-and-Route Summary
+
+  print_pnr_slack("../04-cadence-innovus-pnr/timing-setup.rpt","setup_slack")
+  print_pnr_slack("../04-cadence-innovus-pnr/timing-hold.rpt","hold_slack")
+  print_pnr_area("../04-cadence-innovus-pnr/area.rpt")
+
+  # Back-Annotated Gate-Level Simulation
+
+  print_sim("../05-synopsys-vcs-baglsim/run.log","baglsim")
+
+  {% for eval in evals | default([]) -%}
+  print_eval("{{eval}}")
+  {% endfor %}
+
+  # Print Footer
+
+  print("")
+
+if __name__ == "__main__":
+  main()
+
+
