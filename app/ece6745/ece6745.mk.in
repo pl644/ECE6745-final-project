@@ -1,0 +1,40 @@
+#=========================================================================
+# Modular C++ Build System Subproject Makefile Fragment
+#=========================================================================
+# Please read the documenation in 'mcppbs-uguide.txt' for more details
+# on how the Modular C++ Build System works.
+
+ece6745_intdeps  = @ece6745_intdeps@
+ece6745_cppflags = @ece6745_cppflags@
+ece6745_ldflags  = @ece6745_ldflags@
+ece6745_libs     = @ece6745_libs@
+
+ece6745_hdrs = \
+  ece6745.h \
+  ece6745-misc.h \
+  ece6745-wprint.h \
+  ece6745-check.h \
+  ece6745-malloc.h \
+  ece6745-bthread.h \
+
+ece6745_srcs = \
+  ece6745-misc.c \
+  ece6745-wprint.c \
+  ece6745-check.c \
+  ece6745-malloc.c \
+  ece6745-bthread.c \
+
+ece6745_test_srcs = \
+  ece6745-check-test.c \
+  ece6745-malloc-test.c \
+  ece6745-bthread-test.c \
+
+ece6745_prog_srcs = \
+  ece6745-wprint-ex.c \
+
+ifeq ($(riscv_crosscompile),yes)
+
+ece6745_srcs += \
+  crt0.S
+
+endif

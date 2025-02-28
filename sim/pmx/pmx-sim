@@ -29,10 +29,13 @@
 #  - null-fl   : empty accelerator FL model
 #  - null-rtl  : empty accelerator RTL model
 #
-# For tut9_xcel, the following accelerator impls are available:
+# For sec04, the following accelerator impls are available:
 #
 #  - accum-fl  : accumulator accelerator FL model
 #  - accum-rtl : accumulator accelerator RTL model
+#
+# For tut09, the following accelerator impls are available:
+#
 #  - vvadd-fl  : vector-vector add accelerator FL model
 #  - vvadd-rtl : vector-vector add accelerator RTL model
 #
@@ -44,11 +47,12 @@
 # Author : Shunning Jiang, Christopher Batten
 # Date   : Feb 28, 2023
 
-# Variables used to make the simulator conditionally work for either
-# tut9_xcel and/or lab2_xcel. In our labs repo, we keep both of these
-# enabled, but when we release the code for the tutorial and lab we set
-# these variables accordingly.
+# Variables used to make the simulator conditionally work for sections,
+# tutorials, and/or labs. In our labs repo, we keep all of these enabled,
+# but when we release the code for the section, tutorial, and/or lab we
+# set these variables accordingly.
 
+sec4_xcel_enabled = False
 tut9_xcel_enabled = False
 lab2_xcel_enabled = True
 
@@ -85,9 +89,11 @@ from proc.Proc       import Proc
 from proc.NullXcelFL import NullXcelFL
 from proc.NullXcel   import NullXcel
 
-if tut9_xcel_enabled:
+if sec4_xcel_enabled:
   from tut9_xcel.AccumXcelFL import AccumXcelFL
   from tut9_xcel.AccumXcel   import AccumXcel
+
+if tut9_xcel_enabled:
   from tut9_xcel.VvaddXcelFL import VvaddXcelFL
   from tut9_xcel.VvaddXcel   import VvaddXcel
 
