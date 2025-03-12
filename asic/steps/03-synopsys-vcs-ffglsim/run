@@ -37,7 +37,7 @@ function run_sim
     +incdir+{{src_dir}} \
     ${ECE6745_STDCELLS}/stdcells.v \
     {{src_dir}}/$1_tb.v \
-    ../02-synopsys-dc-synth/post-synth.v | tee run.log
+    ../02-synopsys-dc-synth/post-synth.v | tee $1.log
 
   ./$1 | tee -a $1.log
 

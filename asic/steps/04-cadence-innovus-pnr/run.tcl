@@ -106,11 +106,16 @@ assignIoPins -pin *
 
 create_ccopt_clock_tree_spec
 
-# Turn off an optimization that allows Cadence Innovus to decide to
-# add non-zero clock source insertion latency. Turning this on will
-# complicate back-annotated gate-level simulation.
+# Control an optimization that allows Cadence Innovus to decide to add
+# non-zero clock insertion source latency. Turning this on will
+# complicate back-annotated gate-level simulation, but may enable
+# closing timing for larger blocks.
 
+{% if update_io_latency | default(false) %}
+set_ccopt_property update_io_latency true
+{% else %}
 set_ccopt_property update_io_latency false
+{% endif %}
 
 # Synthesize the clock tree
 

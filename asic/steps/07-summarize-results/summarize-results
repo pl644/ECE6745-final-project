@@ -14,6 +14,7 @@
 #  - Fast-functional gate-level simulation results
 #  - Place-and-route setup slack in ns
 #  - Place-and-route hold slack in ns
+#  - Place-and-route clock insertion source latency in ns
 #  - Place-and-route num stdcells
 #  - Place-and-route area in um^2
 #  - Back-annotated gate-level simulation results
@@ -37,7 +38,7 @@ from pathlib import Path
 def print_sim( sim_log, name ):
 
   if not Path(sim_log).exists():
-    print(f" {name:<12}       = {sim_log} not found")
+    print(f" {name:<12}        = {sim_log} not found")
     return
 
   num_passed = 0
@@ -53,7 +54,7 @@ def print_sim( sim_log, name ):
   if num_failed > 0:
     check_str = "\033[31m(all tests must pass!)\033[0m"
 
-  print(f" {name:<12}       = {num_passed}/{num_passed+num_failed} passed {check_str}")
+  print(f" {name:<12}        = {num_passed}/{num_passed+num_failed} passed {check_str}")
 
 #-------------------------------------------------------------------------
 # print_synth_slack
@@ -62,14 +63,14 @@ def print_sim( sim_log, name ):
 def print_synth_slack( synth_slack_report ):
 
   if not Path(synth_slack_report).exists():
-    print(" synth_setup_slack = {synth_slack_report} not found" )
+    print(f" synth_setup_slack   = {synth_slack_report} not found" )
     return
 
   with open( synth_slack_report, "r" ) as file:
     for line in file:
       if line.startswith("  slack "):
         fields = line.split()
-        print(f" synth_setup_slack  = {float(fields[2]):0.4f} ns" )
+        print(f" synth_setup_slack   = {float(fields[2]):0.4f} ns" )
 
 #-------------------------------------------------------------------------
 # print_synth_area
@@ -78,18 +79,18 @@ def print_synth_slack( synth_slack_report ):
 def print_synth_area( synth_area_report ):
 
   if not Path(synth_area_report).exists():
-    print(" synth_num_stdcells = {synth_area_report} not found" )
-    print(" synth_area         = {synth_area_report} not found" )
+    print(f" synth_num_stdcells  = {synth_area_report} not found" )
+    print(f" synth_area          = {synth_area_report} not found" )
     return
 
   with open( synth_area_report, "r" ) as file:
     for line in file:
       if line.startswith("Number of cells:"):
         fields = line.split(":")
-        print(f" synth_num_stdcells = {fields[1].strip()}" )
+        print(f" synth_num_stdcells  = {fields[1].strip()}" )
       if line.startswith("Total cell area:"):
         fields = line.split(":")
-        print(f" synth_area         = {float(fields[1]):0.3f} um^2" )
+        print(f" synth_area          = {float(fields[1]):0.3f} um^2" )
 
 #-------------------------------------------------------------------------
 # print_slack
@@ -98,7 +99,7 @@ def print_synth_area( synth_area_report ):
 def print_pnr_slack( pnr_timing_setup_report, name ):
 
   if not Path(pnr_timing_setup_report).exists():
-    print(f" pnr_{name:<12}   = {pnr_timing_setup_report} not found" )
+    print(f" pnr_{name:<12}    = {pnr_timing_setup_report} not found" )
     return
 
   slack = "??"
@@ -113,7 +114,7 @@ def print_pnr_slack( pnr_timing_setup_report, name ):
   if slack < 0:
     check_str = "\033[31m(must have positive slack!)\033[0m"
 
-  print(f" pnr_{name:<12}   = {fields[1].strip()} ns {check_str}")
+  print(f" pnr_{name:<12}    = {fields[1].strip()} ns {check_str}")
 
 #-------------------------------------------------------------------------
 # print_pnr_area
@@ -122,16 +123,36 @@ def print_pnr_slack( pnr_timing_setup_report, name ):
 def print_pnr_area( pnr_area_report ):
 
   if not Path(pnr_area_report).exists():
-    print(" pnr_num_stdcells   = {pnr_area_report} not found" )
-    print(" pnr_area           = {pnr_area_report} not found" )
+    print(f" pnr_num_stdcells    = {pnr_area_report} not found" )
+    print(f" pnr_area            = {pnr_area_report} not found" )
     return
 
   with open( pnr_area_report, "r" ) as file:
     for line_num, line in enumerate(file,start=1):
       if line_num == 3:
         fields = line.split()
-        print(f" pnr_num_stdcells   = {fields[1]}" )
-        print(f" pnr_area           = {fields[2]} um^2" )
+        print(f" pnr_num_stdcells    = {fields[1]}" )
+        print(f" pnr_area            = {fields[2]} um^2" )
+
+#-------------------------------------------------------------------------
+# print_pnr_clk_ins_src_lat
+#-------------------------------------------------------------------------
+
+def print_pnr_clk_ins_src_lat( pnr_sdc_file ):
+
+  if not Path(pnr_sdc_file).exists():
+    print(f" pnr_clk_ins_src_lat = {pnr_sdc_file} not found" )
+    return
+
+  clk_ins_src_lat = 0;
+  with open( pnr_sdc_file, "r" ) as file:
+    for line in file:
+      if line.startswith("set_clock_lat"):
+        lat = float(line.split()[5].strip())
+        if lat < clk_ins_src_lat:
+          clk_ins_src_lat = lat
+
+  print(f" pnr_clk_ins_src_lat = {clk_ins_src_lat} ns")
 
 #-------------------------------------------------------------------------
 # print_eval
@@ -185,9 +206,9 @@ def main():
   # Print Header
 
   print("")
-  print(f" timestamp          = {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-  print(f" design_name        = {{design_name}}")
-  print(f" clock_period       = {{clock_period}}")
+  print(f" timestamp           = {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+  print(f" design_name         = {{design_name}}")
+  print(f" clock_period        = {{clock_period}}")
 
   # Four-State RTL Simulation
 
@@ -206,6 +227,7 @@ def main():
 
   print_pnr_slack("../04-cadence-innovus-pnr/timing-setup.rpt","setup_slack")
   print_pnr_slack("../04-cadence-innovus-pnr/timing-hold.rpt","hold_slack")
+  print_pnr_clk_ins_src_lat("../04-cadence-innovus-pnr/post-pnr.sdc")
   print_pnr_area("../04-cadence-innovus-pnr/area.rpt")
 
   # Back-Annotated Gate-Level Simulation

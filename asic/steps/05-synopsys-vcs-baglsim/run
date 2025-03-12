@@ -20,6 +20,12 @@ RUNDIR="$(dirname $(readlink -f "${BASH_SOURCE[0]}"))"
 cd $RUNDIR
 
 #-------------------------------------------------------------------------
+# Caclulate clock insertion source latency
+#-------------------------------------------------------------------------
+
+clk_ins_src_lat=$(./calc-clk-ins-src-lat ../04-cadence-innovus-pnr/post-pnr.sdc)
+
+#-------------------------------------------------------------------------
 # Function for running one sim
 #-------------------------------------------------------------------------
 # $1 = name of test
@@ -35,6 +41,7 @@ function run_sim
     +neg_tchk +sdfverbose \
     -sdf max:Top.DUT:../04-cadence-innovus-pnr/post-pnr.sdf \
     +define+CYCLE_TIME={{clock_period}} \
+    +define+VTB_CLK_INS_SRC_LAT=${clk_ins_src_lat} \
     +define+VTB_INPUT_DELAY=0.025 \
     +define+VTB_OUTPUT_DELAY=0.025 \
     $2 \
@@ -43,7 +50,7 @@ function run_sim
     +incdir+{{src_dir}} \
     ${ECE6745_STDCELLS}/stdcells.v \
     {{src_dir}}/$1_tb.v \
-    ../04-cadence-innovus-pnr/post-pnr.v | tee run.log
+    ../04-cadence-innovus-pnr/post-pnr.v | tee $1.log
 
   ./$1 | tee -a $1.log
 
