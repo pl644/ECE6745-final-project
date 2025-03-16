@@ -11,6 +11,7 @@
 // This implementation reads all elements into internal storage first,
 // then sorts them, and finally writes back to memory.
 //
+// We use Claude 3.7 Sonnet as an assistant to draft our architecture. 
 
 `ifndef LAB2_SORT_SORT_XCEL_V
 `define LAB2_SORT_SORT_XCEL_V
