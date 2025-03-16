@@ -1,0 +1,59 @@
+//========================================================================
+// Data set for ubmark-cnn using fixed-point arithmetic
+//========================================================================
+
+// Define the dimensions for our evaluation
+#define EVAL_BATCH_SIZE 4
+#define EVAL_IN_CHANNELS 3
+#define EVAL_OUT_CHANNELS 16
+#define EVAL_IN_HEIGHT 64
+#define EVAL_IN_WIDTH 64
+#define EVAL_KERNEL_SIZE 4
+#define EVAL_OUT_HEIGHT 63
+#define EVAL_OUT_WIDTH 63
+
+// Sample data for input (first few values of each dimension)
+// Original float data is converted to fixed-point format
+fixed_t eval_input[] = 
+{
+  // Batch 0, Channel 0, partial first row (corresponding to float values below)
+  // 0.1f, 0.2f, 0.3f, 0.1f, 0.4f, 0.2f, 0.3f, 0.1f, 0.2f, 0.5f,
+  FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.3), FLOAT_TO_FIX(0.1), 
+  FLOAT_TO_FIX(0.4), FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.3), FLOAT_TO_FIX(0.1), 
+  FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.5),
+  // Additional data would continue...
+};
+
+// Sample data for weights (first few values)
+fixed_t eval_weights[] = 
+{
+  // Output Channel 0, Input Channel 0, Kernel row 0
+  // 0.1f, 0.2f, 0.1f, 0.3f, 
+  FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.3),
+  // Output Channel 0, Input Channel 0, Kernel row 1
+  // 0.2f, 0.1f, 0.3f, 0.2f,
+  FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.3), FLOAT_TO_FIX(0.2),
+  // Additional data would continue...
+};
+
+// Bias values for each output channel
+fixed_t eval_bias[] = 
+{
+  // 0.1f, 0.2f, 0.15f, 0.1f, 0.25f, 0.3f, 0.1f, 0.2f,
+  // 0.15f, 0.1f, 0.25f, 0.3f, 0.1f, 0.2f, 0.15f, 0.1f
+  FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.15), FLOAT_TO_FIX(0.1), 
+  FLOAT_TO_FIX(0.25), FLOAT_TO_FIX(0.3), FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.2),
+  FLOAT_TO_FIX(0.15), FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.25), FLOAT_TO_FIX(0.3), 
+  FLOAT_TO_FIX(0.1), FLOAT_TO_FIX(0.2), FLOAT_TO_FIX(0.15), FLOAT_TO_FIX(0.1)
+};
+
+// Expected output reference values (first few values of each dimension)
+fixed_t eval_ref_output[] = 
+{
+  // Batch 0, Output Channel 0, partial first row
+  // 1.234f, 2.345f, 3.456f, 4.567f, 5.678f, 6.789f, 7.890f, 8.901f, 9.012f, 1.123f,
+  FLOAT_TO_FIX(1.234), FLOAT_TO_FIX(2.345), FLOAT_TO_FIX(3.456), FLOAT_TO_FIX(4.567), 
+  FLOAT_TO_FIX(5.678), FLOAT_TO_FIX(6.789), FLOAT_TO_FIX(7.890), FLOAT_TO_FIX(8.901), 
+  FLOAT_TO_FIX(9.012), FLOAT_TO_FIX(1.123),
+  // Additional data would continue...
+};

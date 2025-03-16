@@ -1,5 +1,5 @@
 //=========================================================================
-// Sorting Accelerator Implementation (Merge Sort)
+// Sorting Accelerator Implementation (Bubble Sort)
 //=========================================================================
 // Sort array in memory containing positive integers.
 // Accelerator register interface:
@@ -99,64 +99,48 @@ module lab2_xcel_SortXcel
   logic [31:0] base_addr, base_addr_next;   // Base address of array
   
   // Internal buffer for storing array elements (max 64 elements)
-  logic [31:0] buffer [0:127];   
-  logic [31:0] temp [0:127];     
+  logic [31:0] buffer [0:63];
   
+  // Buffer write control signal
   logic buffer_wen;
-  logic [6:0] buffer_waddr;
+  logic [5:0] buffer_waddr;
   logic [31:0] buffer_wdata;
   
-  logic temp_wen;
-  logic [6:0] temp_waddr;
-  logic [31:0] temp_wdata;
-  logic [31:0] read_idx, read_idx_next;   
-  logic [31:0] write_idx, write_idx_next;   
-  logic [31:0] merge_width, merge_width_next; 
-  logic [31:0] left_idx, left_idx_next;      
-  logic [31:0] right_idx, right_idx_next;     
-  logic [31:0] merge_out_idx, merge_out_idx_next; 
-  logic [31:0] merge_start_idx, merge_start_idx_next; 
-  logic [31:0] left_end, left_end_next;     
-  logic [31:0] right_end, right_end_next;  
-  logic [31:0] copy_idx, copy_idx_next;
-  logic [31:0] next_start_idx; // Temporary variable for calculations
+  // Sorting variables
+  logic [31:0] read_idx, read_idx_next;    // Index for reading from memory
+  logic [31:0] write_idx, write_idx_next;  // Index for writing back to memory
+  logic [31:0] i, i_next;                  // Outer loop index
+  logic [31:0] j, j_next;                  // Inner loop index
+  logic [31:0] temp, temp_next;            // Temporary value for swapping
+  logic swap_occurred, swap_occurred_next;  // Flag to detect if swaps occurred
 
+  // Buffer sequential write logic
   always_ff @(posedge clk) begin
-    if (buffer_wen) 
+    if (buffer_wen && buffer_waddr < 64)
       buffer[buffer_waddr] <= buffer_wdata;
-      
-    if (temp_wen) 
-      temp[temp_waddr] <= temp_wdata;
   end
 
+  // Register updates
   always_ff @(posedge clk) begin
     if (reset) begin
       size <= 0;
       base_addr <= 0;
       read_idx <= 0;
       write_idx <= 0;
-      merge_width <= 0;
-      left_idx <= 0;
-      right_idx <= 0;
-      merge_out_idx <= 0;
-      merge_start_idx <= 0;
-      left_end <= 0;
-      right_end <= 0;
-      copy_idx <= 0;
+      i <= 0;
+      j <= 0;
+      temp <= 0;
+      swap_occurred <= 0;
     end
     else begin
       size <= size_next;
       base_addr <= base_addr_next;
       read_idx <= read_idx_next;
       write_idx <= write_idx_next;
-      merge_width <= merge_width_next;
-      left_idx <= left_idx_next;
-      right_idx <= right_idx_next;
-      merge_out_idx <= merge_out_idx_next;
-      merge_start_idx <= merge_start_idx_next;
-      left_end <= left_end_next;
-      right_end <= right_end_next;
-      copy_idx <= copy_idx_next;
+      i <= i_next;
+      j <= j_next;
+      temp <= temp_next;
+      swap_occurred <= swap_occurred_next;
     end
   end
 
@@ -164,82 +148,127 @@ module lab2_xcel_SortXcel
   // State Definition
   //======================================================================
 
-  localparam STATE_XCFG       = 5'd0; 
-  localparam STATE_INIT       = 5'd1; 
+  localparam STATE_XCFG       = 4'd0;  // Configuration handling
+  localparam STATE_INIT       = 4'd1;  // Initialization
   
-  localparam STATE_READ_REQ   = 5'd2;  
-  localparam STATE_READ_RESP  = 5'd3;  
+  // Data reading states
+  localparam STATE_READ_REQ   = 4'd2;  // Request data from memory
+  localparam STATE_READ_RESP  = 4'd3;  // Process read response
   
-  localparam STATE_SORT_INIT  = 5'd4;  
-  localparam STATE_MERGE_INIT = 5'd5;  
-  localparam STATE_MERGE      = 5'd6;  
-  localparam STATE_MERGE_FIN  = 5'd7;  
+  // Bubble sort states
+  localparam STATE_SORT_INIT  = 4'd4;  // Initialize sorting
+  localparam STATE_OUTER      = 4'd5;  // Outer loop of bubble sort
+  localparam STATE_INNER      = 4'd6;  // Inner loop of bubble sort
+  localparam STATE_COMPARE    = 4'd7;  // Compare and swap if needed
   
-  localparam STATE_COPY_INIT  = 5'd8;  
-  localparam STATE_COPY       = 5'd9;  
+  // Data writing states
+  localparam STATE_WRITE_INIT = 4'd8;  // Initialize write operation
+  localparam STATE_WRITE_REQ  = 4'd9;  // Request write to memory
+  localparam STATE_WRITE_RESP = 4'd10; // Process write response
   
-  localparam STATE_WIDTH_DONE = 5'd10; 
-  
-  localparam STATE_WRITE_INIT = 5'd11;
-  localparam STATE_WRITE_REQ  = 5'd12;
-  localparam STATE_WRITE_RESP = 5'd13; 
-  
-  localparam STATE_DONE       = 5'd14;
+  localparam STATE_DONE       = 4'd11; // All operations complete
 
-  logic [4:0] state_reg;
-  logic [4:0] state_reg_next;
+  logic [3:0] state_reg;
   logic go;
 
   // State transition logic
   always_ff @(posedge clk) begin
     if (reset)
       state_reg <= STATE_XCFG;
-    else
-      state_reg <= state_reg_next;
+    else begin
+      case (state_reg)
+        STATE_XCFG:
+          if (go & xcel_respstream_rdy)
+            state_reg <= STATE_INIT;
+          
+        STATE_INIT:
+          state_reg <= STATE_READ_REQ;
+          
+        STATE_READ_REQ:
+          if (read_idx < size && mem_reqstream_rdy)
+            state_reg <= STATE_READ_RESP;
+          else if (read_idx >= size)
+            state_reg <= STATE_SORT_INIT;
+            
+        STATE_READ_RESP:
+          if (memresp_deq_val)
+            state_reg <= STATE_READ_REQ;
+        
+        STATE_SORT_INIT:
+          state_reg <= STATE_OUTER;
+          
+        STATE_OUTER:
+          if (i < size - 1)
+            state_reg <= STATE_INNER;
+          else
+            state_reg <= STATE_WRITE_INIT;
+            
+        STATE_INNER:
+          if (j < size - i - 1)
+            state_reg <= STATE_COMPARE;
+          else if (!swap_occurred) // Early termination if no swaps occurred this pass
+            state_reg <= STATE_WRITE_INIT;
+          else
+            state_reg <= STATE_OUTER;
+            
+        STATE_COMPARE: begin
+          state_reg <= STATE_INNER;
+        end
+            
+        STATE_WRITE_INIT:
+          state_reg <= STATE_WRITE_REQ;
+            
+        STATE_WRITE_REQ:
+          if (write_idx < size && mem_reqstream_rdy)
+            state_reg <= STATE_WRITE_RESP;
+          else if (write_idx >= size)
+            state_reg <= STATE_DONE;
+            
+        STATE_WRITE_RESP:
+          if (memresp_deq_val)
+            state_reg <= STATE_WRITE_REQ;
+            
+        STATE_DONE:
+          state_reg <= STATE_XCFG;
+          
+        default:
+          state_reg <= STATE_XCFG;
+      endcase
+    end
   end
 
   //======================================================================
-  // Combined state outputs and next state logic (only one always_comb)
+  // State Outputs
   //======================================================================
 
   always_comb begin
-    // Default values for all outputs
+    // Default values
     xcelreq_deq_rdy     = 0;
     xcel_respstream_val = 0;
     mem_reqstream_val   = 0;
     memresp_deq_rdy     = 0;
     go                  = 0;
     
+    // Default buffer control signals
     buffer_wen          = 0;
     buffer_waddr        = 0;
     buffer_wdata        = 0;
     
-    temp_wen            = 0;
-    temp_waddr          = 0;
-    temp_wdata          = 0;
-    
+    // Keep register values by default
     size_next           = size;
     base_addr_next      = base_addr;
     read_idx_next       = read_idx;
     write_idx_next      = write_idx;
-    merge_width_next    = merge_width;
-    left_idx_next       = left_idx;
-    right_idx_next      = right_idx;
-    merge_out_idx_next  = merge_out_idx;
-    merge_start_idx_next = merge_start_idx;
-    left_end_next       = left_end;
-    right_end_next      = right_end;
-    copy_idx_next       = copy_idx;
-    next_start_idx      = 0;
+    i_next              = i;
+    j_next              = j;
+    temp_next           = temp;
+    swap_occurred_next  = swap_occurred;
 
     xcel_respstream_msg_raw = '0;
     mem_reqstream_msg_raw   = '0;
-    
-    // Default: stay in current state
-    state_reg_next = state_reg;
 
     //--------------------------------------------------------------------
-    // STATE: XCFG
+    // STATE: XCFG - Configuration handling
     //--------------------------------------------------------------------
     if (state_reg == STATE_XCFG) begin
       xcelreq_deq_rdy     = xcel_respstream_rdy;
@@ -248,13 +277,11 @@ module lab2_xcel_SortXcel
       if (xcelreq_deq_val) begin
         if (xcelreq_deq_msg.type_ == `VC_XCEL_REQ_MSG_TYPE_READ) begin
           xcel_respstream_msg_raw.type_ = `VC_XCEL_RESP_MSG_TYPE_READ;
-          xcel_respstream_msg_raw.data  = 1;
+          xcel_respstream_msg_raw.data  = 1; // Return 1 when done
         end
         else begin
           if (xcelreq_deq_msg.addr == 0) begin
             go = 1;
-            if (xcel_respstream_rdy) 
-              state_reg_next = STATE_INIT;
           end
           else if (xcelreq_deq_msg.addr == 1)
             base_addr_next = xcelreq_deq_msg.data;
@@ -268,16 +295,17 @@ module lab2_xcel_SortXcel
     end
     
     //--------------------------------------------------------------------
-    // STATE: INIT 
+    // STATE: INIT - Initialization
     //--------------------------------------------------------------------
     else if (state_reg == STATE_INIT) begin
       read_idx_next = 0;
       write_idx_next = 0;
-      state_reg_next = STATE_READ_REQ;
+      i_next = 0;
+      j_next = 0;
     end
     
     //--------------------------------------------------------------------
-    // STATE: READ_REQ 
+    // STATE: READ_REQ - Request data from memory
     //--------------------------------------------------------------------
     else if (state_reg == STATE_READ_REQ) begin
       if (read_idx < size) begin
@@ -288,172 +316,92 @@ module lab2_xcel_SortXcel
         mem_reqstream_msg_raw.addr   = base_addr + (read_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
         mem_reqstream_msg_raw.data   = 0;
-        
-        if (mem_reqstream_rdy)
-          state_reg_next = STATE_READ_RESP;
-      end
-      else begin
-        state_reg_next = STATE_SORT_INIT;
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: READ_RESP 
+    // STATE: READ_RESP - Process read response
     //--------------------------------------------------------------------
     else if (state_reg == STATE_READ_RESP) begin
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
+        // Store received data in buffer
         buffer_wen = 1;
-        buffer_waddr = read_idx[6:0]; // Ensure we mask to 6 bits
+        buffer_waddr = read_idx[5:0]; // Only use lower 6 bits (buffer size 64)
         buffer_wdata = memresp_deq_msg.data;
         read_idx_next = read_idx + 1;
-        state_reg_next = STATE_READ_REQ;
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: SORT_INIT 
+    // STATE: SORT_INIT - Initialize sorting
     //--------------------------------------------------------------------
     else if (state_reg == STATE_SORT_INIT) begin
-      merge_width_next = 1;
-      merge_start_idx_next = 0;
-      state_reg_next = STATE_MERGE_INIT;
+      // Initialize bubble sort indices
+      i_next = 0;
+      j_next = 0;
+      swap_occurred_next = 0;
     end
     
     //--------------------------------------------------------------------
-    // STATE: MERGE_INIT
+    // STATE: OUTER - Outer loop of bubble sort
     //--------------------------------------------------------------------
-    else if (state_reg == STATE_MERGE_INIT) begin
-      left_idx_next = merge_start_idx;
-      
-      // Ensure left_end doesn't exceed array size
-      if (merge_start_idx + merge_width <= size)
-        left_end_next = merge_start_idx + merge_width;
-      else
-        left_end_next = size;
-      
-      right_idx_next = left_end_next;
-      
-      // Ensure right_end doesn't exceed array size
-      if (right_idx_next + merge_width <= size)
-        right_end_next = right_idx_next + merge_width;
-      else
-        right_end_next = size;
-      
-      merge_out_idx_next = merge_start_idx;
-      
-      // Check if current merge_start_idx is within array bounds
-      if (merge_start_idx < size)
-        state_reg_next = STATE_MERGE;
-      else
-        state_reg_next = STATE_WIDTH_DONE;
-    end
-    
-    //--------------------------------------------------------------------
-    // STATE: MERGE 
-    //--------------------------------------------------------------------
-    else if (state_reg == STATE_MERGE) begin
-      if (left_idx < left_end && right_idx < right_end) begin
-        if (buffer[left_idx[6:0]] <= buffer[right_idx[6:0]]) begin
-          temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[left_idx[6:0]];
-          left_idx_next = left_idx + 1;
-        end else begin
-          temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[right_idx[6:0]];
-          right_idx_next = right_idx + 1;
-        end
-        merge_out_idx_next = merge_out_idx + 1;
-      end
-      else if (left_idx < left_end) begin
-        temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[left_idx[6:0]];
-        left_idx_next = left_idx + 1;
-        merge_out_idx_next = merge_out_idx + 1;
-      end
-      else if (right_idx < right_end) begin
-        temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[right_idx[6:0]];
-        right_idx_next = right_idx + 1;
-        merge_out_idx_next = merge_out_idx + 1;
-      end
-      else begin
-        state_reg_next = STATE_MERGE_FIN;
+    else if (state_reg == STATE_OUTER) begin
+      if (i < size - 1) begin
+        j_next = 0;
+        swap_occurred_next = 0; // Reset swap flag for new pass
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: MERGE_FIN 
+    // STATE: INNER - Inner loop of bubble sort
     //--------------------------------------------------------------------
-    else if (state_reg == STATE_MERGE_FIN) begin
-      // Calculate next start index using full 32-bit arithmetic
-      next_start_idx = merge_start_idx + (merge_width << 1);
-      merge_start_idx_next = next_start_idx;
-      
-      // Compare with full 32-bit value to avoid overflow
-      if (next_start_idx < size)
-        state_reg_next = STATE_MERGE_INIT;
-      else
-        state_reg_next = STATE_COPY_INIT;
-    end
-    
-    //--------------------------------------------------------------------
-    // STATE: COPY_INIT
-    //--------------------------------------------------------------------
-    else if (state_reg == STATE_COPY_INIT) begin
-      copy_idx_next = 0;
-      state_reg_next = STATE_COPY;
-    end
-    
-    //--------------------------------------------------------------------
-    // STATE: COPY
-    //--------------------------------------------------------------------
-    else if (state_reg == STATE_COPY) begin
-      if (copy_idx < size) begin
+    else if (state_reg == STATE_INNER) begin
+      // Complete the second half of the swap if temp has a value (meaning we performed a swap)
+      if (temp != 0) begin
         buffer_wen = 1;
-        buffer_waddr = copy_idx[6:0]; // Ensure we mask to 6 bits
-        buffer_wdata = temp[copy_idx[6:0]];
-        copy_idx_next = copy_idx + 1;
-        
-        // Check if this will be the last element
-        if (copy_idx == 7'd127 || copy_idx + 1 >= size)
-          state_reg_next = STATE_WIDTH_DONE;
+        buffer_waddr = j; // Current j was incremented from previous j+1
+        buffer_wdata = temp;
+        temp_next = 0; // Reset temp
+      end
+      
+      if (j < size - i - 1) begin
+        // Continue with inner loop
       end
       else begin
-        state_reg_next = STATE_WIDTH_DONE;
+        i_next = i + 1;
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: WIDTH_DONE 
+    // STATE: COMPARE - Compare and swap if needed
     //--------------------------------------------------------------------
-    else if (state_reg == STATE_WIDTH_DONE) begin
-      // Double the merge width for next pass
-      merge_width_next = merge_width << 1;
-      // Reset merge start index to begin next pass
-      merge_start_idx_next = 0;
-      
-      // Check if merge width exceeds array size
-      if (merge_width_next >= size)
-        state_reg_next = STATE_WRITE_INIT;
-      else
-        state_reg_next = STATE_MERGE_INIT;
+    else if (state_reg == STATE_COMPARE) begin
+      // Compare buffer[j] and buffer[j+1]
+      if (buffer[j+1] < buffer[j]) begin
+        // Swap elements
+        temp_next = buffer[j];
+        
+        // First part of swap in buffer - write buffer[j+1] to buffer[j]
+        buffer_wen = 1;
+        buffer_waddr = j;
+        buffer_wdata = buffer[j+1];
+        
+        // Set swap flag
+        swap_occurred_next = 1;
+      end
+      j_next = j + 1;
     end
     
     //--------------------------------------------------------------------
-    // STATE: WRITE_INIT
+    // STATE: WRITE_INIT - Initialize write operation
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_INIT) begin
       write_idx_next = 0;
-      state_reg_next = STATE_WRITE_REQ;
     end
     
     //--------------------------------------------------------------------
-    // STATE: WRITE_REQ
+    // STATE: WRITE_REQ - Request write to memory
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_REQ) begin
       if (write_idx < size) begin
@@ -463,35 +411,29 @@ module lab2_xcel_SortXcel
         mem_reqstream_msg_raw.opaque = 0;
         mem_reqstream_msg_raw.addr   = base_addr + (write_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
-        mem_reqstream_msg_raw.data   = buffer[write_idx[6:0]];
-        
-        if (mem_reqstream_rdy)
-          state_reg_next = STATE_WRITE_RESP;
-      end
-      else begin
-        state_reg_next = STATE_DONE;
+        mem_reqstream_msg_raw.data   = buffer[write_idx[5:0]]; // Only use lower 6 bits
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: WRITE_RESP
+    // STATE: WRITE_RESP - Process write response
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_RESP) begin
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
         write_idx_next = write_idx + 1;
-        state_reg_next = STATE_WRITE_REQ;
       end
     end
     
     //--------------------------------------------------------------------
-    // STATE: DONE
+    // STATE: DONE - All operations complete
     //--------------------------------------------------------------------
     else if (state_reg == STATE_DONE) begin
+      // Reset state for next sort
       read_idx_next = 0;
       write_idx_next = 0;
-      merge_width_next = 0;
-      state_reg_next = STATE_XCFG;
+      i_next = 0;
+      j_next = 0;
     end
   end
 
@@ -534,12 +476,9 @@ module lab2_xcel_SortXcel
       STATE_READ_REQ:   vc_trace.append_str( trace_str, "READ_REQ   " );
       STATE_READ_RESP:  vc_trace.append_str( trace_str, "READ_RESP  " );
       STATE_SORT_INIT:  vc_trace.append_str( trace_str, "SORT_INIT  " );
-      STATE_MERGE_INIT: vc_trace.append_str( trace_str, "MERGE_INIT " );
-      STATE_MERGE:      vc_trace.append_str( trace_str, "MERGE      " );
-      STATE_MERGE_FIN:  vc_trace.append_str( trace_str, "MERGE_FIN  " );
-      STATE_COPY_INIT:  vc_trace.append_str( trace_str, "COPY_INIT  " );
-      STATE_COPY:       vc_trace.append_str( trace_str, "COPY       " );
-      STATE_WIDTH_DONE: vc_trace.append_str( trace_str, "WIDTH_DONE " );
+      STATE_OUTER:      vc_trace.append_str( trace_str, "OUTER      " );
+      STATE_INNER:      vc_trace.append_str( trace_str, "INNER      " );
+      STATE_COMPARE:    vc_trace.append_str( trace_str, "COMPARE    " );
       STATE_WRITE_INIT: vc_trace.append_str( trace_str, "WRITE_INIT " );
       STATE_WRITE_REQ:  vc_trace.append_str( trace_str, "WRITE_REQ  " );
       STATE_WRITE_RESP: vc_trace.append_str( trace_str, "WRITE_RESP " );
@@ -548,9 +487,8 @@ module lab2_xcel_SortXcel
     endcase
 
     // Print key indices and values for debugging
-    $sformat( str, "w:%d r/w:%d/%d li:%d ri:%d ms:%d cpy:%d", 
-              merge_width, read_idx, write_idx, left_idx, right_idx, 
-              merge_start_idx, copy_idx);
+    $sformat( str, "r/w:%d/%d i:%d j:%d", 
+              read_idx, write_idx, i, j);
     vc_trace.append_str( trace_str, str );
 
     vc_trace.append_str( trace_str, ")" );

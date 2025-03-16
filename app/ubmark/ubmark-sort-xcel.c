@@ -16,43 +16,44 @@
 //------------------------------------------------------------------------
 
 #ifdef _RISCV
-
-void ubmark_sort_xcel( int* x, int size )
-{
+void ubmark_sort_xcel(int* x, int size) {
   // We might want to handle special cases in software instead of
   // hardware. So for example, we explicitly check to make sure size is
   // greater than one before trying to use the accelerator.
-
-  if ( size <= 1 )
+  
+  if (size <= 1)
     return;
-
-  __asm__ (
-    "csrw 0x7e1, %[x]   ;\n"
-    "csrw 0x7e2, %[size];\n"
-    "csrw 0x7e0, x0     ;\n"
-    "csrr x0,    0x7e0  ;\n"
-
-    // Outputs from the inline assembly block
-
-    :
-
-    // Inputs to the inline assembly block
-
-    : [x]    "r"(x),
-      [size] "r"(size)
-
-    // Tell the compiler this accelerator read/writes memory
-
-    : "memory"
-  );
+    
+  // Define maximum size that accelerator can handle
+  const int MAX_ACCEL_SIZE = 128;
+  
+  // If size is small enough for the accelerator
+  if (size <= MAX_ACCEL_SIZE) {
+    // Use hardware accelerator
+    __asm__ (
+      "csrw 0x7e1, %[x]   ;\n"
+      "csrw 0x7e2, %[size];\n"
+      "csrw 0x7e0, x0     ;\n"
+      "csrr x0,    0x7e0  ;\n"
+      
+      // Outputs from the inline assembly block
+      :
+      // Inputs to the inline assembly block
+      : [x]    "r"(x),
+        [size] "r"(size)
+      // Tell the compiler this accelerator read/writes memory
+      : "memory"
+    );
+  }
+  else {
+    // For larger arrays, fall back to software implementation
+    ubmark_sort(x, size);
+  }
 }
 
 #else
-
-void ubmark_sort_xcel( int* x, int size )
-{
-  return ubmark_sort( x, size );
+void ubmark_sort_xcel(int* x, int size) {
+  return ubmark_sort(x, size);
 }
-
 #endif
 

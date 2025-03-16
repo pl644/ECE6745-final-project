@@ -11,7 +11,7 @@
 //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''\/
 
 // Helper functions
-
+void ubmark_bubblesort( int* x, int size );
 void ubmark_sort_swap( int* x_ptr, int* y_ptr );
 int  ubmark_sort_partition( int* x, int first, int last );
 int  ubmark_sort_median( int x, int y, int z );

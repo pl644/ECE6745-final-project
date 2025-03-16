@@ -16,9 +16,11 @@ ubmark_hdrs = \
   ubmark-mfilt.h \
   ubmark-bsearch.h \
   ubmark-sort.h \
+  ubmark-cnn.h \
   ubmark-accum-xcel.h \
   ubmark-vvadd-xcel.h \
   ubmark-sort-xcel.h \
+  
 
 ubmark_srcs = \
   ubmark-accum.c \
@@ -27,6 +29,7 @@ ubmark_srcs = \
   ubmark-mfilt.c \
   ubmark-bsearch.c \
   ubmark-sort.c \
+  ubmark-cnn.c \
   ubmark-accum-xcel.c \
   ubmark-vvadd-xcel.c \
   ubmark-sort-xcel.c \
@@ -39,6 +42,7 @@ ubmark_test_srcs = \
   ubmark-bsearch-test.c \
   ubmark-sort-helper-test.c \
   ubmark-sort-test.c \
+  ubmark-cnn-test.c \
   ubmark-null-xcel-test.c \
   ubmark-accum-xcel-test.c \
   ubmark-vvadd-xcel-test.c \
@@ -51,6 +55,7 @@ ubmark_prog_srcs = \
   ubmark-mfilt-eval.c \
   ubmark-bsearch-eval.c \
   ubmark-sort-eval.c \
+  ubmark-cnn-eval.c \
   ubmark-accum-xcel-eval.c \
   ubmark-vvadd-xcel-eval.c \
   ubmark-sort-xcel-eval.c \

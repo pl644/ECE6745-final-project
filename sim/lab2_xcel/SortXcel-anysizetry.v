@@ -99,16 +99,17 @@ module lab2_xcel_SortXcel
   logic [31:0] base_addr, base_addr_next;   // Base address of array
   
   // Internal buffer for storing array elements (max 64 elements)
-  logic [31:0] buffer [0:127];   
-  logic [31:0] temp [0:127];     
+  logic [31:0] buffer [0:63];   
+  logic [31:0] temp [0:63];     
   
   logic buffer_wen;
-  logic [6:0] buffer_waddr;
+  logic [5:0] buffer_waddr;
   logic [31:0] buffer_wdata;
   
   logic temp_wen;
-  logic [6:0] temp_waddr;
+  logic [5:0] temp_waddr;
   logic [31:0] temp_wdata;
+  
   logic [31:0] read_idx, read_idx_next;   
   logic [31:0] write_idx, write_idx_next;   
   logic [31:0] merge_width, merge_width_next; 
@@ -120,6 +121,8 @@ module lab2_xcel_SortXcel
   logic [31:0] right_end, right_end_next;  
   logic [31:0] copy_idx, copy_idx_next;
   logic [31:0] next_start_idx; // Temporary variable for calculations
+  logic [31:0] chunk_idx, chunk_idx_next; // For multi-chunk processing
+  logic [31:0] effective_size, effective_size_next; // Size for current chunk
 
   always_ff @(posedge clk) begin
     if (buffer_wen) 
@@ -143,6 +146,8 @@ module lab2_xcel_SortXcel
       left_end <= 0;
       right_end <= 0;
       copy_idx <= 0;
+      chunk_idx <= 0;
+      effective_size <= 0;
     end
     else begin
       size <= size_next;
@@ -157,6 +162,8 @@ module lab2_xcel_SortXcel
       left_end <= left_end_next;
       right_end <= right_end_next;
       copy_idx <= copy_idx_next;
+      chunk_idx <= chunk_idx_next;
+      effective_size <= effective_size_next;
     end
   end
 
@@ -185,6 +192,7 @@ module lab2_xcel_SortXcel
   localparam STATE_WRITE_RESP = 5'd13; 
   
   localparam STATE_DONE       = 5'd14;
+  localparam STATE_NEXT_CHUNK = 5'd15; // New state for multi-chunk processing
 
   logic [4:0] state_reg;
   logic [4:0] state_reg_next;
@@ -230,6 +238,8 @@ module lab2_xcel_SortXcel
     left_end_next       = left_end;
     right_end_next      = right_end;
     copy_idx_next       = copy_idx;
+    chunk_idx_next      = chunk_idx;
+    effective_size_next = effective_size;
     next_start_idx      = 0;
 
     xcel_respstream_msg_raw = '0;
@@ -273,6 +283,14 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_INIT) begin
       read_idx_next = 0;
       write_idx_next = 0;
+      chunk_idx_next = 0;
+      
+      // Determine initial chunk size (up to 64 elements)
+      if (size <= 64)
+        effective_size_next = size;
+      else
+        effective_size_next = 64;
+        
       state_reg_next = STATE_READ_REQ;
     end
     
@@ -280,7 +298,8 @@ module lab2_xcel_SortXcel
     // STATE: READ_REQ 
     //--------------------------------------------------------------------
     else if (state_reg == STATE_READ_REQ) begin
-      if (read_idx < size) begin
+      // Read elements for current chunk only
+      if (read_idx < (chunk_idx + 1) * 64 && read_idx < size) begin
         mem_reqstream_val = 1;
         
         mem_reqstream_msg_raw.type_  = `VC_MEM_REQ_MSG_TYPE_READ;
@@ -304,7 +323,7 @@ module lab2_xcel_SortXcel
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
         buffer_wen = 1;
-        buffer_waddr = read_idx[6:0]; // Ensure we mask to 6 bits
+        buffer_waddr = (read_idx - chunk_idx * 64) & 6'h3F; // Adjust index for current chunk
         buffer_wdata = memresp_deq_msg.data;
         read_idx_next = read_idx + 1;
         state_reg_next = STATE_READ_REQ;
@@ -326,24 +345,24 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_MERGE_INIT) begin
       left_idx_next = merge_start_idx;
       
-      // Ensure left_end doesn't exceed array size
-      if (merge_start_idx + merge_width <= size)
+      // Ensure left_end doesn't exceed effective size
+      if (merge_start_idx + merge_width <= effective_size)
         left_end_next = merge_start_idx + merge_width;
       else
-        left_end_next = size;
+        left_end_next = effective_size;
       
       right_idx_next = left_end_next;
       
-      // Ensure right_end doesn't exceed array size
-      if (right_idx_next + merge_width <= size)
+      // Ensure right_end doesn't exceed effective size
+      if (right_idx_next + merge_width <= effective_size)
         right_end_next = right_idx_next + merge_width;
       else
-        right_end_next = size;
+        right_end_next = effective_size;
       
       merge_out_idx_next = merge_start_idx;
       
       // Check if current merge_start_idx is within array bounds
-      if (merge_start_idx < size)
+      if (merge_start_idx < effective_size)
         state_reg_next = STATE_MERGE;
       else
         state_reg_next = STATE_WIDTH_DONE;
@@ -354,30 +373,30 @@ module lab2_xcel_SortXcel
     //--------------------------------------------------------------------
     else if (state_reg == STATE_MERGE) begin
       if (left_idx < left_end && right_idx < right_end) begin
-        if (buffer[left_idx[6:0]] <= buffer[right_idx[6:0]]) begin
+        if (buffer[left_idx[5:0]] <= buffer[right_idx[5:0]]) begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[left_idx[6:0]];
+          temp_waddr = merge_out_idx[5:0];
+          temp_wdata = buffer[left_idx[5:0]];
           left_idx_next = left_idx + 1;
         end else begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[right_idx[6:0]];
+          temp_waddr = merge_out_idx[5:0];
+          temp_wdata = buffer[right_idx[5:0]];
           right_idx_next = right_idx + 1;
         end
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (left_idx < left_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[left_idx[6:0]];
+        temp_waddr = merge_out_idx[5:0];
+        temp_wdata = buffer[left_idx[5:0]];
         left_idx_next = left_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (right_idx < right_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[right_idx[6:0]];
+        temp_waddr = merge_out_idx[5:0];
+        temp_wdata = buffer[right_idx[5:0]];
         right_idx_next = right_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
       end
@@ -395,7 +414,7 @@ module lab2_xcel_SortXcel
       merge_start_idx_next = next_start_idx;
       
       // Compare with full 32-bit value to avoid overflow
-      if (next_start_idx < size)
+      if (next_start_idx < effective_size)
         state_reg_next = STATE_MERGE_INIT;
       else
         state_reg_next = STATE_COPY_INIT;
@@ -413,15 +432,11 @@ module lab2_xcel_SortXcel
     // STATE: COPY
     //--------------------------------------------------------------------
     else if (state_reg == STATE_COPY) begin
-      if (copy_idx < size) begin
+      if (copy_idx < effective_size) begin
         buffer_wen = 1;
-        buffer_waddr = copy_idx[6:0]; // Ensure we mask to 6 bits
-        buffer_wdata = temp[copy_idx[6:0]];
+        buffer_waddr = copy_idx[5:0];
+        buffer_wdata = temp[copy_idx[5:0]];
         copy_idx_next = copy_idx + 1;
-        
-        // Check if this will be the last element
-        if (copy_idx == 7'd127 || copy_idx + 1 >= size)
-          state_reg_next = STATE_WIDTH_DONE;
       end
       else begin
         state_reg_next = STATE_WIDTH_DONE;
@@ -437,8 +452,8 @@ module lab2_xcel_SortXcel
       // Reset merge start index to begin next pass
       merge_start_idx_next = 0;
       
-      // Check if merge width exceeds array size
-      if (merge_width_next >= size)
+      // Check if merge width exceeds effective size
+      if (merge_width_next >= effective_size)
         state_reg_next = STATE_WRITE_INIT;
       else
         state_reg_next = STATE_MERGE_INIT;
@@ -448,7 +463,7 @@ module lab2_xcel_SortXcel
     // STATE: WRITE_INIT
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_INIT) begin
-      write_idx_next = 0;
+      write_idx_next = chunk_idx * 64; // Start writing from the chunk's base index
       state_reg_next = STATE_WRITE_REQ;
     end
     
@@ -456,20 +471,24 @@ module lab2_xcel_SortXcel
     // STATE: WRITE_REQ
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_REQ) begin
-      if (write_idx < size) begin
+      if (write_idx < (chunk_idx * 64) + effective_size && write_idx < size) begin
         mem_reqstream_val = 1;
         
         mem_reqstream_msg_raw.type_  = `VC_MEM_REQ_MSG_TYPE_WRITE;
         mem_reqstream_msg_raw.opaque = 0;
         mem_reqstream_msg_raw.addr   = base_addr + (write_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
-        mem_reqstream_msg_raw.data   = buffer[write_idx[6:0]];
+        mem_reqstream_msg_raw.data = buffer[(write_idx - chunk_idx * 64) & 6'h3F];
         
         if (mem_reqstream_rdy)
           state_reg_next = STATE_WRITE_RESP;
       end
       else begin
-        state_reg_next = STATE_DONE;
+        // Check if we need to process another chunk
+        if ((chunk_idx + 1) * 64 < size)
+          state_reg_next = STATE_NEXT_CHUNK;
+        else
+          state_reg_next = STATE_DONE;
       end
     end
     
@@ -485,12 +504,31 @@ module lab2_xcel_SortXcel
     end
     
     //--------------------------------------------------------------------
+    // STATE: NEXT_CHUNK - Handle multi-chunk processing
+    //--------------------------------------------------------------------
+    else if (state_reg == STATE_NEXT_CHUNK) begin
+      chunk_idx_next = chunk_idx + 1;
+      
+      // Calculate effective size for next chunk
+      if ((chunk_idx + 2) * 64 <= size)
+        effective_size_next = 64;
+      else
+        effective_size_next = size - (chunk_idx + 1) * 64;
+        
+      // Reset sorting indices for next chunk
+      read_idx_next = (chunk_idx + 1) * 64;
+      
+      state_reg_next = STATE_READ_REQ;
+    end
+    
+    //--------------------------------------------------------------------
     // STATE: DONE
     //--------------------------------------------------------------------
     else if (state_reg == STATE_DONE) begin
       read_idx_next = 0;
       write_idx_next = 0;
       merge_width_next = 0;
+      chunk_idx_next = 0;
       state_reg_next = STATE_XCFG;
     end
   end
@@ -544,13 +582,14 @@ module lab2_xcel_SortXcel
       STATE_WRITE_REQ:  vc_trace.append_str( trace_str, "WRITE_REQ  " );
       STATE_WRITE_RESP: vc_trace.append_str( trace_str, "WRITE_RESP " );
       STATE_DONE:       vc_trace.append_str( trace_str, "DONE       " );
+      STATE_NEXT_CHUNK: vc_trace.append_str( trace_str, "NEXT_CHUNK " );
       default:          vc_trace.append_str( trace_str, "?          " );
     endcase
 
     // Print key indices and values for debugging
-    $sformat( str, "w:%d r/w:%d/%d li:%d ri:%d ms:%d cpy:%d", 
+    $sformat( str, "w:%d r/w:%d/%d li:%d ri:%d ms:%d cpy:%d chunk:%d es:%d", 
               merge_width, read_idx, write_idx, left_idx, right_idx, 
-              merge_start_idx, copy_idx);
+              merge_start_idx, copy_idx, chunk_idx, effective_size);
     vc_trace.append_str( trace_str, str );
 
     vc_trace.append_str( trace_str, ")" );

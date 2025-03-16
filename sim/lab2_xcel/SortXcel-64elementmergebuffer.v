@@ -99,15 +99,15 @@ module lab2_xcel_SortXcel
   logic [31:0] base_addr, base_addr_next;   // Base address of array
   
   // Internal buffer for storing array elements (max 64 elements)
-  logic [31:0] buffer [0:127];   
-  logic [31:0] temp [0:127];     
+  logic [31:0] buffer [0:63];   
+  logic [31:0] temp [0:63];     
   
   logic buffer_wen;
-  logic [6:0] buffer_waddr;
+  logic [5:0] buffer_waddr;
   logic [31:0] buffer_wdata;
   
   logic temp_wen;
-  logic [6:0] temp_waddr;
+  logic [5:0] temp_waddr;
   logic [31:0] temp_wdata;
   logic [31:0] read_idx, read_idx_next;   
   logic [31:0] write_idx, write_idx_next;   
@@ -304,7 +304,7 @@ module lab2_xcel_SortXcel
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
         buffer_wen = 1;
-        buffer_waddr = read_idx[6:0]; // Ensure we mask to 6 bits
+        buffer_waddr = read_idx[5:0]; // Ensure we mask to 6 bits
         buffer_wdata = memresp_deq_msg.data;
         read_idx_next = read_idx + 1;
         state_reg_next = STATE_READ_REQ;
@@ -354,30 +354,30 @@ module lab2_xcel_SortXcel
     //--------------------------------------------------------------------
     else if (state_reg == STATE_MERGE) begin
       if (left_idx < left_end && right_idx < right_end) begin
-        if (buffer[left_idx[6:0]] <= buffer[right_idx[6:0]]) begin
+        if (buffer[left_idx[5:0]] <= buffer[right_idx[5:0]]) begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[left_idx[6:0]];
+          temp_waddr = merge_out_idx[5:0];
+          temp_wdata = buffer[left_idx[5:0]];
           left_idx_next = left_idx + 1;
         end else begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[right_idx[6:0]];
+          temp_waddr = merge_out_idx[5:0];
+          temp_wdata = buffer[right_idx[5:0]];
           right_idx_next = right_idx + 1;
         end
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (left_idx < left_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[left_idx[6:0]];
+        temp_waddr = merge_out_idx[5:0];
+        temp_wdata = buffer[left_idx[5:0]];
         left_idx_next = left_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (right_idx < right_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[right_idx[6:0]];
+        temp_waddr = merge_out_idx[5:0];
+        temp_wdata = buffer[right_idx[5:0]];
         right_idx_next = right_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
       end
@@ -415,12 +415,12 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_COPY) begin
       if (copy_idx < size) begin
         buffer_wen = 1;
-        buffer_waddr = copy_idx[6:0]; // Ensure we mask to 6 bits
-        buffer_wdata = temp[copy_idx[6:0]];
+        buffer_waddr = copy_idx[5:0]; // Ensure we mask to 6 bits
+        buffer_wdata = temp[copy_idx[5:0]];
         copy_idx_next = copy_idx + 1;
         
         // Check if this will be the last element
-        if (copy_idx == 7'd127 || copy_idx + 1 >= size)
+        if (copy_idx == 6'd63 || copy_idx + 1 >= size)
           state_reg_next = STATE_WIDTH_DONE;
       end
       else begin
@@ -463,7 +463,7 @@ module lab2_xcel_SortXcel
         mem_reqstream_msg_raw.opaque = 0;
         mem_reqstream_msg_raw.addr   = base_addr + (write_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
-        mem_reqstream_msg_raw.data   = buffer[write_idx[6:0]];
+        mem_reqstream_msg_raw.data   = buffer[write_idx[5:0]];
         
         if (mem_reqstream_rdy)
           state_reg_next = STATE_WRITE_RESP;

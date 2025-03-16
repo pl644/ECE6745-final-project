@@ -99,27 +99,26 @@ module lab2_xcel_SortXcel
   logic [31:0] base_addr, base_addr_next;   // Base address of array
   
   // Internal buffer for storing array elements (max 64 elements)
-  logic [31:0] buffer [0:127];   
-  logic [31:0] temp [0:127];     
+  logic [31:0] buffer [0:63];   
+  logic [31:0] temp [0:63];     
   
   logic buffer_wen;
-  logic [6:0] buffer_waddr;
+  logic [5:0] buffer_waddr;
   logic [31:0] buffer_wdata;
   
   logic temp_wen;
-  logic [6:0] temp_waddr;
+  logic [5:0] temp_waddr;
   logic [31:0] temp_wdata;
   logic [31:0] read_idx, read_idx_next;   
   logic [31:0] write_idx, write_idx_next;   
   logic [31:0] merge_width, merge_width_next; 
-  logic [31:0] left_idx, left_idx_next;      
-  logic [31:0] right_idx, right_idx_next;     
-  logic [31:0] merge_out_idx, merge_out_idx_next; 
-  logic [31:0] merge_start_idx, merge_start_idx_next; 
-  logic [31:0] left_end, left_end_next;     
-  logic [31:0] right_end, right_end_next;  
-  logic [31:0] copy_idx, copy_idx_next;
-  logic [31:0] next_start_idx; // Temporary variable for calculations
+  logic [5:0] left_idx, left_idx_next;      
+  logic [5:0] right_idx, right_idx_next;     
+  logic [5:0] merge_out_idx, merge_out_idx_next; 
+  logic [5:0] merge_start_idx, merge_start_idx_next; 
+  logic [5:0] left_end, left_end_next;     
+  logic [5:0] right_end, right_end_next;  
+  logic [5:0] copy_idx, copy_idx_next;      
 
   always_ff @(posedge clk) begin
     if (buffer_wen) 
@@ -187,23 +186,95 @@ module lab2_xcel_SortXcel
   localparam STATE_DONE       = 5'd14;
 
   logic [4:0] state_reg;
-  logic [4:0] state_reg_next;
   logic go;
 
   // State transition logic
   always_ff @(posedge clk) begin
     if (reset)
       state_reg <= STATE_XCFG;
-    else
-      state_reg <= state_reg_next;
+    else begin
+      case (state_reg)
+        STATE_XCFG:
+          if (go & xcel_respstream_rdy)
+            state_reg <= STATE_INIT;
+          
+        STATE_INIT:
+          state_reg <= STATE_READ_REQ;
+          
+        STATE_READ_REQ:
+          if (read_idx < size && mem_reqstream_rdy)
+            state_reg <= STATE_READ_RESP;
+          else if (read_idx >= size)
+            state_reg <= STATE_SORT_INIT;
+            
+        STATE_READ_RESP:
+          if (memresp_deq_val)
+            state_reg <= STATE_READ_REQ;
+        
+        STATE_SORT_INIT:
+          state_reg <= STATE_MERGE_INIT;
+          
+        STATE_MERGE_INIT:
+          if (merge_width < size)
+            state_reg <= STATE_MERGE;
+          else
+            state_reg <= STATE_WRITE_INIT;
+            
+        STATE_MERGE:
+          if ((left_idx < left_end && right_idx < right_end) || 
+              left_idx < left_end || right_idx < right_end)
+            state_reg <= STATE_MERGE;
+          else
+            state_reg <= STATE_MERGE_FIN;
+        
+        STATE_MERGE_FIN:
+          if (merge_start_idx + (merge_width << 1) < size)
+            state_reg <= STATE_MERGE_INIT;
+          else
+            state_reg <= STATE_COPY_INIT;
+            
+        STATE_COPY_INIT:
+          state_reg <= STATE_COPY;
+          
+        STATE_COPY:
+          if (copy_idx < size)
+            state_reg <= STATE_COPY;
+          else
+            state_reg <= STATE_WIDTH_DONE;
+            
+        STATE_WIDTH_DONE:
+          if (merge_width < size/2)
+            state_reg <= STATE_MERGE_INIT;
+          else
+            state_reg <= STATE_WRITE_INIT;
+            
+        STATE_WRITE_INIT:
+          state_reg <= STATE_WRITE_REQ;
+            
+        STATE_WRITE_REQ:
+          if (write_idx < size && mem_reqstream_rdy)
+            state_reg <= STATE_WRITE_RESP;
+          else if (write_idx >= size)
+            state_reg <= STATE_DONE;
+            
+        STATE_WRITE_RESP:
+          if (memresp_deq_val)
+            state_reg <= STATE_WRITE_REQ;
+            
+        STATE_DONE:
+          state_reg <= STATE_XCFG;
+          
+        default:
+          state_reg <= STATE_XCFG;
+      endcase
+    end
   end
 
   //======================================================================
-  // Combined state outputs and next state logic (only one always_comb)
+  // State Outputs
   //======================================================================
 
   always_comb begin
-    // Default values for all outputs
     xcelreq_deq_rdy     = 0;
     xcel_respstream_val = 0;
     mem_reqstream_val   = 0;
@@ -230,13 +301,9 @@ module lab2_xcel_SortXcel
     left_end_next       = left_end;
     right_end_next      = right_end;
     copy_idx_next       = copy_idx;
-    next_start_idx      = 0;
 
     xcel_respstream_msg_raw = '0;
     mem_reqstream_msg_raw   = '0;
-    
-    // Default: stay in current state
-    state_reg_next = state_reg;
 
     //--------------------------------------------------------------------
     // STATE: XCFG
@@ -253,8 +320,6 @@ module lab2_xcel_SortXcel
         else begin
           if (xcelreq_deq_msg.addr == 0) begin
             go = 1;
-            if (xcel_respstream_rdy) 
-              state_reg_next = STATE_INIT;
           end
           else if (xcelreq_deq_msg.addr == 1)
             base_addr_next = xcelreq_deq_msg.data;
@@ -273,7 +338,6 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_INIT) begin
       read_idx_next = 0;
       write_idx_next = 0;
-      state_reg_next = STATE_READ_REQ;
     end
     
     //--------------------------------------------------------------------
@@ -288,12 +352,6 @@ module lab2_xcel_SortXcel
         mem_reqstream_msg_raw.addr   = base_addr + (read_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
         mem_reqstream_msg_raw.data   = 0;
-        
-        if (mem_reqstream_rdy)
-          state_reg_next = STATE_READ_RESP;
-      end
-      else begin
-        state_reg_next = STATE_SORT_INIT;
       end
     end
     
@@ -304,10 +362,9 @@ module lab2_xcel_SortXcel
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
         buffer_wen = 1;
-        buffer_waddr = read_idx[6:0]; // Ensure we mask to 6 bits
+        buffer_waddr = read_idx[5:0]; 
         buffer_wdata = memresp_deq_msg.data;
         read_idx_next = read_idx + 1;
-        state_reg_next = STATE_READ_REQ;
       end
     end
     
@@ -317,36 +374,22 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_SORT_INIT) begin
       merge_width_next = 1;
       merge_start_idx_next = 0;
-      state_reg_next = STATE_MERGE_INIT;
     end
     
     //--------------------------------------------------------------------
     // STATE: MERGE_INIT
     //--------------------------------------------------------------------
     else if (state_reg == STATE_MERGE_INIT) begin
+
       left_idx_next = merge_start_idx;
-      
-      // Ensure left_end doesn't exceed array size
-      if (merge_start_idx + merge_width <= size)
-        left_end_next = merge_start_idx + merge_width;
-      else
-        left_end_next = size;
+      left_end_next = merge_start_idx + merge_width;
+      if (left_end_next > size) left_end_next = size;
       
       right_idx_next = left_end_next;
-      
-      // Ensure right_end doesn't exceed array size
-      if (right_idx_next + merge_width <= size)
-        right_end_next = right_idx_next + merge_width;
-      else
-        right_end_next = size;
+      right_end_next = right_idx_next + merge_width;
+      if (right_end_next > size) right_end_next = size;
       
       merge_out_idx_next = merge_start_idx;
-      
-      // Check if current merge_start_idx is within array bounds
-      if (merge_start_idx < size)
-        state_reg_next = STATE_MERGE;
-      else
-        state_reg_next = STATE_WIDTH_DONE;
     end
     
     //--------------------------------------------------------------------
@@ -354,35 +397,32 @@ module lab2_xcel_SortXcel
     //--------------------------------------------------------------------
     else if (state_reg == STATE_MERGE) begin
       if (left_idx < left_end && right_idx < right_end) begin
-        if (buffer[left_idx[6:0]] <= buffer[right_idx[6:0]]) begin
+        if (buffer[left_idx] <= buffer[right_idx]) begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[left_idx[6:0]];
+          temp_waddr = merge_out_idx;
+          temp_wdata = buffer[left_idx];
           left_idx_next = left_idx + 1;
         end else begin
           temp_wen = 1;
-          temp_waddr = merge_out_idx[6:0];
-          temp_wdata = buffer[right_idx[6:0]];
+          temp_waddr = merge_out_idx;
+          temp_wdata = buffer[right_idx];
           right_idx_next = right_idx + 1;
         end
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (left_idx < left_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[left_idx[6:0]];
+        temp_waddr = merge_out_idx;
+        temp_wdata = buffer[left_idx];
         left_idx_next = left_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
       end
       else if (right_idx < right_end) begin
         temp_wen = 1;
-        temp_waddr = merge_out_idx[6:0];
-        temp_wdata = buffer[right_idx[6:0]];
+        temp_waddr = merge_out_idx;
+        temp_wdata = buffer[right_idx];
         right_idx_next = right_idx + 1;
         merge_out_idx_next = merge_out_idx + 1;
-      end
-      else begin
-        state_reg_next = STATE_MERGE_FIN;
       end
     end
     
@@ -390,15 +430,7 @@ module lab2_xcel_SortXcel
     // STATE: MERGE_FIN 
     //--------------------------------------------------------------------
     else if (state_reg == STATE_MERGE_FIN) begin
-      // Calculate next start index using full 32-bit arithmetic
-      next_start_idx = merge_start_idx + (merge_width << 1);
-      merge_start_idx_next = next_start_idx;
-      
-      // Compare with full 32-bit value to avoid overflow
-      if (next_start_idx < size)
-        state_reg_next = STATE_MERGE_INIT;
-      else
-        state_reg_next = STATE_COPY_INIT;
+      merge_start_idx_next = merge_start_idx + (merge_width << 1);
     end
     
     //--------------------------------------------------------------------
@@ -406,7 +438,6 @@ module lab2_xcel_SortXcel
     //--------------------------------------------------------------------
     else if (state_reg == STATE_COPY_INIT) begin
       copy_idx_next = 0;
-      state_reg_next = STATE_COPY;
     end
     
     //--------------------------------------------------------------------
@@ -415,16 +446,9 @@ module lab2_xcel_SortXcel
     else if (state_reg == STATE_COPY) begin
       if (copy_idx < size) begin
         buffer_wen = 1;
-        buffer_waddr = copy_idx[6:0]; // Ensure we mask to 6 bits
-        buffer_wdata = temp[copy_idx[6:0]];
+        buffer_waddr = copy_idx;
+        buffer_wdata = temp[copy_idx];
         copy_idx_next = copy_idx + 1;
-        
-        // Check if this will be the last element
-        if (copy_idx == 7'd127 || copy_idx + 1 >= size)
-          state_reg_next = STATE_WIDTH_DONE;
-      end
-      else begin
-        state_reg_next = STATE_WIDTH_DONE;
       end
     end
     
@@ -432,16 +456,8 @@ module lab2_xcel_SortXcel
     // STATE: WIDTH_DONE 
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WIDTH_DONE) begin
-      // Double the merge width for next pass
       merge_width_next = merge_width << 1;
-      // Reset merge start index to begin next pass
       merge_start_idx_next = 0;
-      
-      // Check if merge width exceeds array size
-      if (merge_width_next >= size)
-        state_reg_next = STATE_WRITE_INIT;
-      else
-        state_reg_next = STATE_MERGE_INIT;
     end
     
     //--------------------------------------------------------------------
@@ -449,7 +465,6 @@ module lab2_xcel_SortXcel
     //--------------------------------------------------------------------
     else if (state_reg == STATE_WRITE_INIT) begin
       write_idx_next = 0;
-      state_reg_next = STATE_WRITE_REQ;
     end
     
     //--------------------------------------------------------------------
@@ -463,13 +478,7 @@ module lab2_xcel_SortXcel
         mem_reqstream_msg_raw.opaque = 0;
         mem_reqstream_msg_raw.addr   = base_addr + (write_idx << 2);
         mem_reqstream_msg_raw.len    = 0;
-        mem_reqstream_msg_raw.data   = buffer[write_idx[6:0]];
-        
-        if (mem_reqstream_rdy)
-          state_reg_next = STATE_WRITE_RESP;
-      end
-      else begin
-        state_reg_next = STATE_DONE;
+        mem_reqstream_msg_raw.data   = buffer[write_idx[5:0]];
       end
     end
     
@@ -480,7 +489,6 @@ module lab2_xcel_SortXcel
       memresp_deq_rdy = 1;
       if (memresp_deq_val) begin
         write_idx_next = write_idx + 1;
-        state_reg_next = STATE_WRITE_REQ;
       end
     end
     
@@ -491,7 +499,6 @@ module lab2_xcel_SortXcel
       read_idx_next = 0;
       write_idx_next = 0;
       merge_width_next = 0;
-      state_reg_next = STATE_XCFG;
     end
   end
 

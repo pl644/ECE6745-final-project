@@ -48,6 +48,10 @@ extern int ece6745_check_status;
 
 extern int ece6745_check_expr0;
 extern int ece6745_check_expr1;
+extern float ece6745_check_float_expr0;
+extern float ece6745_check_float_expr1;
+extern float ece6745_check_float_diff;
+extern float ece6745_check_float_epsilon;
 
 //------------------------------------------------------------------------
 // ECE6745_CHECK
@@ -200,6 +204,47 @@ extern int ece6745_check_expr1;
     }                                                                   \
                                                                         \
   } while ( 0 )
+
+//------------------------------------------------------------------------
+// ECE6745_CHECK_FLOAT_EQ
+//------------------------------------------------------------------------
+// Check if two floating point expressions are approximately equal
+
+#define ECE6745_CHECK_FLOAT_EQ( expr0_, expr1_ )                        \
+  do {                                                                  \
+    ece6745_check_float_expr0 = (expr0_);                               \
+    ece6745_check_float_expr1 = (expr1_);                               \
+    ece6745_check_float_diff = ece6745_check_float_expr0 - ece6745_check_float_expr1; \
+    if (ece6745_check_float_diff < 0.0f)                                \
+      ece6745_check_float_diff = -ece6745_check_float_diff;             \
+    ece6745_check_float_epsilon = 0.0001f;                              \
+                                                                        \
+    if ( ece6745_check_float_diff > ece6745_check_float_epsilon ) {     \
+      if ( __n > 0 ) {                                                  \
+        ece6745_wprintf( L"\n - [ " ECE6745_RED(L"FAILED") L" ] %S:%d: %S != %S (%f != %f, diff=%f)", \
+          ECE6745_WFILE, __LINE__,                                      \
+          ECE6745_STRINGIFY_A2W(expr0_), ECE6745_STRINGIFY_A2W(expr1_), \
+          ece6745_check_float_expr0, ece6745_check_float_expr1, ece6745_check_float_diff ); \
+      }                                                                 \
+      else                                                              \
+        ece6745_wprint_str( ECE6745_RED(L"FAILED") );                   \
+      ece6745_flush();                                                  \
+      ece6745_check_status = 1;                                         \
+      return;                                                           \
+    }                                                                   \
+    else if ( __n > 0 ) {                                               \
+      ece6745_wprintf( L"\n - [ " ECE6745_GREEN(L"passed") L" ] %S:%d: %S ≈ %S (%f ≈ %f, diff=%f)", \
+        ECE6745_WFILE, __LINE__,                                        \
+        ECE6745_STRINGIFY_A2W(expr0_), ECE6745_STRINGIFY_A2W(expr1_),   \
+        ece6745_check_float_expr0, ece6745_check_float_expr1, ece6745_check_float_diff ); \
+      ece6745_flush();                                                  \
+    }                                                                   \
+    else {                                                              \
+      ece6745_wprint_str( ECE6745_GREEN(L".") );                        \
+      ece6745_flush();                                                  \
+    }                                                                   \
+                                                                        \
+} while ( 0 )
 
 #endif /* ECE6745_CHECK_H */
 

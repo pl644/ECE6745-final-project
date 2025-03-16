@@ -81,6 +81,29 @@ void ubmark_sort_h( int* x, int first, int last )
   ubmark_sort_h( x, p,     last );
 }
 
+//------------------------------------------------------------------------
+// ubmark_sort_bubblesort
+//------------------------------------------------------------------------
+void ubmark_bubblesort( int* x, int size ) {
+  
+  int i, j, temp;
+  int swapped;
+
+  for ( i = 0; i < size-1; i++ ) {
+    swapped = 0;
+
+    for ( j = 0; j < size-i-1; j++ ) {
+      if ( x[j] > x[j+1] ) {
+        temp    = x[j];
+        x[j]    = x[j+1];
+        x[j+1]  = temp;
+        swapped = 1;
+      }
+    }
+
+    if ( swapped == 0 ) break; 
+  }
+}
 //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''/\
 
 //------------------------------------------------------------------------
@@ -99,8 +122,8 @@ void ubmark_sort( int* x, int size )
   //: ECE6745_UNUSED_INT(size);
 
   ubmark_sort_h( x, 0, size );
+  //: ubmark_bubblesort( x, size );
 
   //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''/\
 
 }
-
