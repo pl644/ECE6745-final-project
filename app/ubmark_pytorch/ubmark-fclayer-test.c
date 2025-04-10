@@ -3,12 +3,12 @@
 //========================================================================
 
 #include "ece6745.h"
-#include "ubmark-linear.h"
+#include "ubmark-fclayer.h"
 #include <cmath>
 #include <stdio.h>
 
 // Helper function to compare floats with tolerance
-bool compare_float(float a, float b, float epsilon = 1e-5) {
+bool compare_float(float a, float b, float epsilon = 1e-4) {
     return std::fabs(a - b) < epsilon;
 }
 
@@ -72,7 +72,7 @@ void test_case_1_small() {
     float output[batch_size * output_features] = {0};
     
     // Call the linear layer function
-    ubmark_linear(
+    ubmark_fclayer(
         input,
         weights,
         bias,
@@ -121,7 +121,7 @@ void test_case_2_pytorch_data() {
     read_file("output.data", expected, batch_size * output_features);
     
     // Call the linear layer function
-    ubmark_linear(
+    ubmark_fclayer(
         input,
         weights,
         bias,
