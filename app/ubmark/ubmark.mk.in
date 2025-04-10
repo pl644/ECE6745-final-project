@@ -20,6 +20,7 @@ ubmark_hdrs = \
   ubmark-accum-xcel.h \
   ubmark-vvadd-xcel.h \
   ubmark-sort-xcel.h \
+  ubmark-fclayer.h  \
   
 
 ubmark_srcs = \
@@ -33,6 +34,7 @@ ubmark_srcs = \
   ubmark-accum-xcel.c \
   ubmark-vvadd-xcel.c \
   ubmark-sort-xcel.c \
+  ubmark-fclayer.c  \
 
 ubmark_test_srcs = \
   ubmark-accum-test.c \
@@ -47,6 +49,7 @@ ubmark_test_srcs = \
   ubmark-accum-xcel-test.c \
   ubmark-vvadd-xcel-test.c \
   ubmark-sort-xcel-test.c \
+  ubmark-fclayer-test.c  \
 
 ubmark_prog_srcs = \
   ubmark-accum-eval.c \
