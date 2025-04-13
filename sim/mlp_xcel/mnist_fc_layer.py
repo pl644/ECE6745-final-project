@@ -1,10 +1,10 @@
 from pymtl3 import *
-from pymtl3.passes.backends.verilog import *
+from pymtl3.passes.backends.verilog import VerilogPlaceholder
 
 # Define bit widths
 Bits32 = mk_bits(32)
 
-class FullyConnected(Component):
+class FullyConnected(VerilogPlaceholder ,Component):
   def construct(s, batch_size=4, input_channel = 4, output_channel=2):
     # Input and output ports
     s.input_vector = [[InPort(Bits32) for _ in range(input_channel)]for _ in range(batch_size)]

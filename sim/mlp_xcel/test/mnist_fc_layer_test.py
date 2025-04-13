@@ -16,6 +16,9 @@ def test_fully_connected_fl(cmdline_opts):
   dut = FullyConnected()
   
   # Initialize test data manually since we need to set 2D array inputs
+    # Apply Verilog placeholder pass to import the Verilog implementation
+    
+    # Then apply the default pass group
   dut.apply(DefaultPassGroup())
   dut.sim_reset()
   
@@ -64,10 +67,30 @@ def test_fully_connected_fl(cmdline_opts):
   assert dut.output_result[0][1] == 48
   assert dut.output_result[1][0] == 59
   assert dut.output_result[1][1] == 84
-  
+
+def test_fully_connected(cmdline_opts):
+    # For a fully connected layer with:
+    # batch_size=2, input_channel=3, output_channel=2
+    
+    # We need to define a test vector format that handles the 2D arrays
+    # One approach is to use a custom wrapper around the component to flatten inputs/outputs
+    
+    # For this example, let's use a simplified version with only one test case
+    # that matches your manual test
+    
+    run_test_vector_sim(FullyConnected(batch_size=2, input_channel=3, output_channel=2), [
+        # Headers for input vectors (flattened 2D array)
+        ('input_vector[0][0] input_vector[0][1] input_vector[0][2] input_vector[1][0] input_vector[1][1] input_vector[1][2] weights[0][0] weights[0][1] weights[1][0] weights[1][1] weights[2][0] weights[2][1] biases[0] biases[1] output_result[0][0] output_result[0][1] output_result[1][0] output_result[1][1]'),
+        
+        # Test vector matching your manual test case
+        [1, 2, 3, 4, 5, 6,  # input_vector values
+         1, 2, 3, 4, 5, 6,  # weights values
+         10, 20,            # biases values
+         32, 48, 59, 84]    # expected output_result values
+    ], cmdline_opts)
 
 
 
 
 if __name__ == "_main_":
-    test_fully_connected_fl()
+    test_fully_connected()
