@@ -55,12 +55,14 @@ from pymtl3.passes.backends.verilog import *
 # Define bit widths
 Bits2 = mk_bits(2)
 Bits4 = mk_bits(4)
+Bits6 = mk_bits(6)
 Bits8 = mk_bits(8)
 Bits10 = mk_bits(10)
 Bits12 = mk_bits(12)
 Bits16 = mk_bits(16)
 Bits18 = mk_bits(18)
 Bits22 = mk_bits(22)
+Bits24 = mk_bits(24)
 Bits32 = mk_bits(32)
 
 class FullyConnected_FL(Component):
@@ -105,14 +107,16 @@ class FullyConnected_FL(Component):
     s.ostream //= s.ostream_q.ostream
     
     # Internal storage for weights, biases, and inputs
-    s.weights = [[Wire(Bits16) for _ in range(output_channel)] for _ in range(input_channel)]
-    s.biases = [Wire(Bits16) for _ in range(output_channel)]
-    s.inputs = [[Wire(Bits16) for _ in range(input_channel)] for _ in range(batch_size)]
+    s.weights = [[Wire(Bits12) for _ in range(output_channel)] for _ in range(input_channel)]
+    s.biases = [Wire(Bits12) for _ in range(output_channel)]
+    s.inputs = [[Wire(Bits12) for _ in range(input_channel)] for _ in range(batch_size)]
     s.input_counts = [Wire(Bits16) for _ in range(batch_size)]
     
     # FL block
     @update_once
     def block():
+      tmp_product = Bits24(0)
+      output_msgs = []
       if s.istream_q.deq.rdy() and s.ostream_q.enq.rdy():
         msg = s.istream_q.deq()
         
@@ -125,38 +129,36 @@ class FullyConnected_FL(Component):
           input_idx_bits = msg[20:30]
           output_idx_bits = msg[12:20]
           value_bits = msg[0:12]
-          
           input_idx = input_idx_bits.uint()
           output_idx = output_idx_bits.uint()
           
           # Extend the value to 16 bits for internal storage
           # Preserving the sign bit
-          sign_bit = value_bits[11]
-          sign_ext = Bits4(0) if sign_bit == 0 else Bits4(0xF)
-          extended_value = concat(sign_ext, value_bits)
+          # sign_bit = value_bits[11]
+          # sign_ext = Bits4(0) if sign_bit == 0 else Bits4(0xF)
+          # extended_value = concat(sign_ext, value_bits)
           
           if input_idx < input_channel and output_idx < output_channel:
-            s.weights[input_idx][output_idx] @= extended_value
-            
+            s.weights[input_idx][output_idx] @= value_bits
+            # print(s.weights[input_idx][output_idx],input_idx,output_idx)
         elif msg_type_bits == 1:  # Bias config
           # Extract data
           output_idx_bits = msg[22:30]
-          value_bits = msg[0:22]
+          value_bits = msg[0:12]
           
           output_idx = output_idx_bits.uint()
           
           # Truncate to 16 bits for internal storage
           # We take the most significant 16 bits
-          truncated_value = value_bits[6:22]
-          
+
           if output_idx < output_channel:
-            s.biases[output_idx] @= truncated_value
+            s.biases[output_idx] @= value_bits
             
         elif msg_type_bits == 2:  # Input data
           # Extract data
           batch_idx_bits = msg[26:30]
           channel_idx_bits = msg[16:26]
-          value_bits = msg[0:16]
+          value_bits = msg[0:12]
           
           batch_idx = batch_idx_bits.uint()
           channel_idx = channel_idx_bits.uint()
@@ -166,42 +168,44 @@ class FullyConnected_FL(Component):
             s.inputs[batch_idx][channel_idx] @= value_bits
             tmp_count = s.input_counts[batch_idx]
             s.input_counts[batch_idx] @= tmp_count + 1
+            # print(s.inputs[batch_idx][channel_idx],batch_idx,channel_idx)
+            # print(tmp_count)
             
             # Check if we've received all inputs for this batch
-            if (tmp_count + 1) == input_channel:
+            if (tmp_count ) == input_channel:
               # Process all outputs one by one
+
               for j in range(output_channel):
-                # Start with bias
+              # Start with bias
                 accum = s.biases[j]
-                
-                # Do dot product with proper Q4.7 fixed-point arithmetic
+                # print(s.biases[j])
+              # Do dot product with proper Q4.7 fixed-point arithmetic
                 for k in range(input_channel):
-                  tmp_input = s.inputs[batch_idx][k]
-                  tmp_weight = s.weights[k][j]
-                  
-                  # Explicitly extend to wider bit width for multiplication
-                  extended_input = concat(Bits16(0), tmp_input)   # 32 bits
-                  extended_weight = concat(Bits16(0), tmp_weight) # 32 bits
-                  
-                  # Now the product will be 32 bits
-                  tmp_product = extended_input * extended_weight
-                  
-                  # Get the properly shifted value (shift by 7 for Q4.7)
-                  # Take bits [7:25] of the 32-bit result
-                  product_shifted = tmp_product[7:25]  # 18 bits
-                  
-                  # Add to accumulator (extending to avoid overflow)
-                  extended_accum = concat(Bits16(0), accum)
-                  extended_accum = extended_accum + concat(Bits14(0), product_shifted)
-                  
-                  # Extract the lower 16 bits for the next iteration
-                  accum = extended_accum[0:16]
                 
-                # Final result is in accum (16 bits) - extend to 18 bits for output
-                result_value = concat(Bits2(0), accum)
-                
-                # Create output message (type 3)
-                # Format: [2-bit type=3][4-bit batch][8-bit output][18-bit result]
+                # Now the product will be 32 bits
+                  input_extended = concat(Bits12(0), s.inputs[batch_idx][k])
+                  weight_extended = concat(Bits12(0), s.weights[k][j])
+                  print(s.inputs[batch_idx][k],batch_idx,k)
+                  print(s.weights[k][j],k,j)
+                  
+      # Now the product will be 24 bits
+                  tmp_product = input_extended * weight_extended
+                  # print(tmp_product)
+                  # print("1 cycle")
+                # Get the properly shifted value (shift by 7 for Q4.7)
+                # Take bits [7:25] of the 32-bit result
+                  product_shifted = tmp_product[0:12]  # 18 bits
+                  # print(product_shifted)
+                  accum = product_shifted + accum
+                  # print(accum)
+                  
+                sign_bit = accum[11]
+                sign_ext = Bits6(0) if sign_bit == 0 else Bits6(111111)
+                result_value = concat(sign_ext, accum)
+              # Final result is in accum (16 bits) - extend to 18 bits for output
+              # print(accum)
+              # Create output message (type 3)
+              # Format: [2-bit type=3][4-bit batch][8-bit output][18-bit result]
                 type_bits = Bits2(3)
                 batch_bits = Bits4(batch_idx)
                 output_bits = Bits8(j)
@@ -210,10 +214,12 @@ class FullyConnected_FL(Component):
                 upper_part = concat(type_bits, batch_bits)
                 header = concat(upper_part, output_bits)
                 output_msg = concat(header, result_value)
-                
-                # Send the output
-                s.ostream_q.enq(output_msg)
+                output_msgs.append(output_msg)
               
+              # Send the output
+                print(output_msgs[0])
+                s.ostream_q.enq(output_msgs[0])
+                
               # Reset counter
               s.input_counts[batch_idx] @= Bits16(0)
     

@@ -55,6 +55,13 @@ def mk_input_msg(batch_idx, in_channel, value):
 def mk_output_msg(batch_idx, out_channel, value):
     return concat(concat(concat(Bits2(MSG_OUTPUT), Bits4(batch_idx)), Bits8(out_channel)), Bits18(value))
 
+def mk_imsg( a, b ):
+  return concat( Bits32( a, trunc_int=True ), Bits32( b, trunc_int=True ) )
+
+# Make output message, truncate ints to ensure they fit in 32 bits.
+
+def mk_omsg( a ):
+  return Bits32( a, trunc_int=True )
 #-------------------------------------------------------------------------
 # Test Case: small_fc
 #-------------------------------------------------------------------------
@@ -123,10 +130,10 @@ def test_fully_connected_fl(test_params):
         # msg_type = msg[30:].uint()
         # print(f"Message: {msg}, First 2 bits: {msg_type}")
         if msg[30:].uint() == MSG_OUTPUT:  # If it's an output message
-            print(f"Output message: {msg}")        
+            # print(f"Output message: {msg}")        
             output_msgs.append(msg)
         else:  # If it's an input message (weight, bias, or input)
-            print(f"Input message: {msg}")
+            # print(f"Input message: {msg}")
             input_msgs.append(msg)
     # print(f"Test case: {input_msgs}")
     # Configure the source and sink
@@ -134,6 +141,7 @@ def test_fully_connected_fl(test_params):
         msgs=input_msgs,
         initial_delay=test_params.src_delay+3,
         interval_delay=test_params.src_delay)
+    print(output_msgs)
     
     th.set_param("top.sink.construct",
         msgs=output_msgs,
