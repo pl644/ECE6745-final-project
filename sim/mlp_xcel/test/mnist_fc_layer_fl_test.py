@@ -1,176 +1,148 @@
-from pymtl3 import *
-from pymtl3.stdlib.test_utils import run_test_vector_sim
-from mlp_xcel.mnist_fc_layer_fl import FullyConnected_FL
-import random
+#=========================================================================
+# MLP_FC_layer_FL_test
+#=========================================================================
 
-def test_fully_connected_fl(cmdline_opts):
-  # Create and test with batch_size=2, input_channel=3, output_channel=2
-  dut = FullyConnected_FL(batch_size=2, input_channel=3, output_channel=2)
-  
-  # Initialize test
-  dut.apply(DefaultPassGroup())
-  dut.sim_reset()
-  
-  # Message type constants
-  MSG_WEIGHT = 0
-  MSG_BIAS = 1
-  MSG_INPUT = 2
-  
-  # Configure weights: 3×2 matrix
-  # [[1, 2],
-  #  [3, 4],
-  #  [5, 6]]
-  
-  # Set up readiness signals
-  dut.istream.val @= 1
-  dut.ostream.rdy @= 1
-  
-  # Configure weights using the new 32-bit format:
-  # [31:30] - Type, [29:20] - Input Channel, [19:12] - Output Channel, [11:0] - Weight Value
-  weight_msg1 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(0)), Bits8(0)), Bits12(1))  # weight[0][0] = 1
-  dut.istream.msg @= weight_msg1
-  dut.sim_tick()
-  
-  weight_msg2 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(0)), Bits8(1)), Bits12(2))  # weight[0][1] = 2
-  dut.istream.msg @= weight_msg2
-  dut.sim_tick()
-  
-  weight_msg3 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(1)), Bits8(0)), Bits12(3))  # weight[1][0] = 3
-  dut.istream.msg @= weight_msg3
-  dut.sim_tick()
-  
-  weight_msg4 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(1)), Bits8(1)), Bits12(4))  # weight[1][1] = 4
-  dut.istream.msg @= weight_msg4
-  dut.sim_tick()
-  
-  weight_msg5 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(2)), Bits8(0)), Bits12(5))  # weight[2][0] = 5
-  dut.istream.msg @= weight_msg5
-  dut.sim_tick()
-  
-  weight_msg6 = concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(2)), Bits8(1)), Bits12(6))  # weight[2][1] = 6
-  dut.istream.msg @= weight_msg6
-  dut.sim_tick()
-  
-  # Configure biases: [10, 20]
-  # [31:30] - Type, [29:22] - Output Channel, [21:0] - Bias Value
-  bias_msg1 = concat(concat(Bits2(MSG_BIAS), Bits8(0)), Bits22(10))  # bias[0] = 10
-  dut.istream.msg @= bias_msg1
-  dut.sim_tick()
-  
-  bias_msg2 = concat(concat(Bits2(MSG_BIAS), Bits8(1)), Bits22(20))  # bias[1] = 20
-  dut.istream.msg @= bias_msg2
-  dut.sim_tick()
-  
-  # Send input data for batch 0
-  # [31:30] - Type, [29:26] - Batch Index, [25:16] - Input Channel, [15:0] - Input Value
-  input_msg1 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(0)), Bits10(0)), Bits16(1))  # input[0][0] = 1
-  dut.istream.msg @= input_msg1
-  dut.sim_tick()
-  
-  input_msg2 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(0)), Bits10(1)), Bits16(2))  # input[0][1] = 2
-  dut.istream.msg @= input_msg2
-  dut.sim_tick()
-  
-  # Send the last input for batch 0, which should trigger computation
-  input_msg3 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(0)), Bits10(2)), Bits16(3))  # input[0][2] = 3
-  dut.istream.msg @= input_msg3
-  dut.sim_tick()
-  
-  # Check outputs for batch 0
-  # Expected: [32, 48]
-  
-  # Allow a few cycles for computation
-  for _ in range(3):
-    dut.sim_tick()
-  
-  # Check if output is valid
-  # Output format: [31:30] - Type(3), [29:26] - Batch, [25:18] - Output Channel, [17:0] - Value
-  if dut.ostream.val:
-    output = dut.ostream.msg
-    # Extract data from the new format
-    batch_idx = output[26:30].uint()
-    output_idx = output[18:26].uint()
-    value = output[0:18].uint()
+import pytest
+from pymtl3 import *
+from pymtl3.stdlib.test_utils import mk_test_case_table, run_sim
+from pymtl3.stdlib.stream import StreamSourceFL, StreamSinkFL
+from mlp_xcel.mnist_fc_layer_fl import FullyConnected_FL
+
+#-------------------------------------------------------------------------
+# TestHarness
+#-------------------------------------------------------------------------
+
+class TestHarness(Component):
+    def construct(s, dut):
+        # Instantiate models
+        s.src = StreamSourceFL(Bits32)
+        s.sink = StreamSinkFL(Bits32)
+        s.dut = dut
+
+        # Connect
+        s.src.ostream //= s.dut.istream
+        s.dut.ostream //= s.sink.istream
+
+    def done(s):
+        return s.src.done() and s.sink.done()
+
+    def line_trace(s):
+        return s.src.line_trace() + " > " + s.dut.line_trace() + " > " + s.sink.line_trace()
+
+#-------------------------------------------------------------------------
+# Message creation helpers
+#-------------------------------------------------------------------------
+
+# Message type constants
+MSG_WEIGHT = 0
+MSG_BIAS = 1
+MSG_INPUT = 2
+MSG_OUTPUT = 3  # Output message type
+
+# Helper function to create weight message
+def mk_weight_msg(in_channel, out_channel, value):
+    return concat(concat(concat(Bits2(MSG_WEIGHT), Bits10(in_channel)), Bits8(out_channel)), Bits12(value))
+
+# Helper function to create bias message
+def mk_bias_msg(out_channel, value):
+    return concat(concat(Bits2(MSG_BIAS), Bits8(out_channel)), Bits22(value))
+
+# Helper function to create input message
+def mk_input_msg(batch_idx, in_channel, value):
+    return concat(concat(concat(Bits2(MSG_INPUT), Bits4(batch_idx)), Bits10(in_channel)), Bits16(value))
+
+# Helper function to create expected output message
+def mk_output_msg(batch_idx, out_channel, value):
+    return concat(concat(concat(Bits2(MSG_OUTPUT), Bits4(batch_idx)), Bits8(out_channel)), Bits18(value))
+
+#-------------------------------------------------------------------------
+# Test Case: small_fc
+#-------------------------------------------------------------------------
+
+small_fc_msgs = [
+    # Configure weights (3×2 matrix): [[1, 2], [3, 4], [5, 6]]
+    mk_weight_msg(0, 0, 1),
+    mk_weight_msg(0, 1, 2),
+    mk_weight_msg(1, 0, 3),
+    mk_weight_msg(1, 1, 4),
+    mk_weight_msg(2, 0, 5),
+    mk_weight_msg(2, 1, 6),
     
-    print(f"Output batch {batch_idx}, output {output_idx}: {value}")
-    assert batch_idx == 0
-    assert output_idx == 0
-    assert value == 32  # Expected: 1*1 + 2*3 + 3*5 + 10 = 32
-  
-  # Signal that we've read the data
-  dut.ostream.rdy @= 0
-  dut.sim_tick()
-  dut.ostream.rdy @= 1
-  dut.sim_tick()
-  
-  # Check the second output
-  if dut.ostream.val:
-    output = dut.ostream.msg
-    batch_idx = output[26:30].uint()
-    output_idx = output[18:26].uint()
-    value = output[0:18].uint()
+    # Configure biases: [10, 20]
+    mk_bias_msg(0, 10),
+    mk_bias_msg(1, 20),
     
-    print(f"Output batch {batch_idx}, output {output_idx}: {value}")
-    assert batch_idx == 0
-    assert output_idx == 1
-    assert value == 48  # Expected: 1*2 + 2*4 + 3*6 + 20 = 48
-  
-  # Signal that we've read the data
-  dut.ostream.rdy @= 0
-  dut.sim_tick()
-  dut.ostream.rdy @= 1
-  dut.sim_tick()
-  
-  # Send input data for batch 1
-  input_msg4 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(1)), Bits10(0)), Bits16(4))  # input[1][0] = 4
-  dut.istream.msg @= input_msg4
-  dut.sim_tick()
-  
-  input_msg5 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(1)), Bits10(1)), Bits16(5))  # input[1][1] = 5
-  dut.istream.msg @= input_msg5
-  dut.sim_tick()
-  
-  # Send the last input for batch 1
-  input_msg6 = concat(concat(concat(Bits2(MSG_INPUT), Bits4(1)), Bits10(2)), Bits16(6))  # input[1][2] = 6
-  dut.istream.msg @= input_msg6
-  dut.sim_tick()
-  
-  # Allow a few cycles for computation
-  for _ in range(3):
-    dut.sim_tick()
-  
-  # Check outputs for batch 1
-  # Expected: [59, 84]
-  if dut.ostream.val:
-    output = dut.ostream.msg
-    batch_idx = output[26:30].uint()
-    output_idx = output[18:26].uint()
-    value = output[0:18].uint()
+    # Send input data for batch 0: [1, 2, 3]
+    mk_input_msg(0, 0, 1),
+    mk_input_msg(0, 1, 2),
+    mk_input_msg(0, 2, 3),
     
-    print(f"Output batch {batch_idx}, output {output_idx}: {value}")
-    assert batch_idx == 1
-    assert output_idx == 0
-    assert value == 59  # Expected: 4*1 + 5*3 + 6*5 + 10 = 59
-  
-  # Signal that we've read the data
-  dut.ostream.rdy @= 0
-  dut.sim_tick()
-  dut.ostream.rdy @= 1
-  dut.sim_tick()
-  
-  # Check the second output
-  if dut.ostream.val:
-    output = dut.ostream.msg
-    batch_idx = output[26:30].uint()
-    output_idx = output[18:26].uint()
-    value = output[0:18].uint()
+    # Expected output for batch 0: [32, 48]
+    mk_output_msg(0, 0, 32),
+    mk_output_msg(0, 1, 48),
     
-    print(f"Output batch {batch_idx}, output {output_idx}: {value}")
-    assert batch_idx == 1
-    assert output_idx == 1
-    assert value == 84  # Expected: 4*2 + 5*4 + 6*6 + 20 = 84
-  
-  print("All tests passed!")
+    # Send input data for batch 1: [4, 5, 6]
+    mk_input_msg(1, 0, 4),
+    mk_input_msg(1, 1, 5),
+    mk_input_msg(1, 2, 6),
+    
+    # Expected output for batch 1: [59, 84]
+    mk_output_msg(1, 0, 59),
+    mk_output_msg(1, 1, 84),
+]
+
+#-------------------------------------------------------------------------
+# Test Case Table
+#-------------------------------------------------------------------------
+
+test_case_table = mk_test_case_table([
+    (             "msgs              dut_params                                src_delay sink_delay"),
+    [ "small_fc",  small_fc_msgs,   {"batch_size": 2, "input_channel": 3, "output_channel": 2}, 0,        0         ],
+    # Add more test cases here with different parameters/delays
+])
+
+#-------------------------------------------------------------------------
+# Run Tests
+#-------------------------------------------------------------------------
+
+@pytest.mark.parametrize(**test_case_table)
+def test_fully_connected_fl(test_params):
+    # Create the DUT
+    dut = FullyConnected_FL(**test_params.dut_params)
+    
+    # Create test harness
+    th = TestHarness(dut)
+    
+    # Setup source and sink streams
+    input_msgs = []
+    output_msgs = []
+    # print(f"Test case: {test_params.msgs}")
+    
+    # Split messages into inputs and expected outputs
+    for i, msg in enumerate(test_params.msgs):
+        # msg_type = msg[30:].uint()
+        # print(f"Message: {msg}, First 2 bits: {msg_type}")
+        if msg[30:].uint() == MSG_OUTPUT:  # If it's an output message
+            print(f"Output message: {msg}")        
+            output_msgs.append(msg)
+        else:  # If it's an input message (weight, bias, or input)
+            print(f"Input message: {msg}")
+            input_msgs.append(msg)
+    # print(f"Test case: {input_msgs}")
+    # Configure the source and sink
+    th.set_param("top.src.construct",
+        msgs=input_msgs,
+        initial_delay=test_params.src_delay+3,
+        interval_delay=test_params.src_delay)
+    
+    th.set_param("top.sink.construct",
+        msgs=output_msgs,
+        initial_delay=test_params.sink_delay+3,
+        interval_delay=test_params.sink_delay)
+    
+    # Run simulation
+    run_sim(th)
 
 if __name__ == "__main__":
-    test_fully_connected_fl()
+    # Run directly (not using pytest)
+    test_fully_connected_fl(test_case_table["small_fc"])
