@@ -223,19 +223,37 @@ module mlp_xcel_FCLayerDpath
   //----------------------------------------------------------------------
   
   // PE signals
-  logic [11:0] pe_act  [INPUT_CHANNEL+1][OUTPUT_CHANNEL+1];
-  logic [11:0] pe_sum  [INPUT_CHANNEL+1][OUTPUT_CHANNEL+1];
-  logic        pe_wen  [INPUT_CHANNEL][OUTPUT_CHANNEL];
-  logic [11:0] pe_weight [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic [11:0] pe_act_in  [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic [11:0] pe_act_out [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic [11:0] pe_sum_in  [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic [11:0] pe_sum_out [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic        pe_wen     [INPUT_CHANNEL][OUTPUT_CHANNEL];
+  logic [11:0] pe_weight  [INPUT_CHANNEL][OUTPUT_CHANNEL];
   
-  // Initialize boundary conditions
+  // Initialize inputs and interconnect signals
   genvar i, j;
   generate
-    // Initialize leftmost column activations (inputs fed from left edge)
     for (i = 0; i < INPUT_CHANNEL; i++) begin : row_inputs
-      for (j = 0; j < OUTPUT_CHANNEL; j++) begin : column_inputs
-        // Row i gets input_buffer[i]
-        assign pe_act[i][j] = (pe_en && compute_cycles == 0) ? input_buffer[i] : 12'b0;
+      for (j = 0; j < OUTPUT_CHANNEL; j++) begin : col_inputs
+        // First column gets input from input_buffer
+        if (j == 0) begin
+          assign pe_act_in[i][j] = (pe_en && compute_cycles == 0) ? input_buffer[i] : 12'b0;
+        end else begin
+          // Other columns get input from previous column's output
+          assign pe_act_in[i][j] = pe_act_out[i][j-1];
+        end
+        
+        // First row gets zero sum_in
+        if (i == 0) begin
+          assign pe_sum_in[i][j] = 12'b0;
+        end else begin
+          // Other rows get input from row above
+          assign pe_sum_in[i][j] = pe_sum_out[i-1][j];
+        end
+        
+        // Weight loading logic
+        assign pe_wen[i][j] = weight_wen && (msg_input_idx == i) && (msg_output_idx == j);
+        assign pe_weight[i][j] = msg_value;
       end
     end
   endgenerate
@@ -244,10 +262,6 @@ module mlp_xcel_FCLayerDpath
   generate
     for (i = 0; i < INPUT_CHANNEL; i++) begin : pe_rows
       for (j = 0; j < OUTPUT_CHANNEL; j++) begin : pe_cols
-        // Weight loading logic
-        assign pe_wen[i][j] = weight_wen && (msg_input_idx == i) && (msg_output_idx == j);
-        assign pe_weight[i][j] = msg_value;
-        
         // Instantiate processing element
         mlp_xcel_SystolicPE pe (
           .clk       (clk),
@@ -255,10 +269,10 @@ module mlp_xcel_FCLayerDpath
           .pe_en     (pe_en),
           .weight    (pe_weight[i][j]),
           .weight_en (pe_wen[i][j]),
-          .act_in    (pe_act[i][j]),
-          .sum_in    (pe_sum[i][j]),
-          .act_out   (pe_act[i+1][j]),
-          .sum_out   (pe_sum[i+1][j])
+          .act_in    (pe_act_in[i][j]),
+          .sum_in    (pe_sum_in[i][j]),
+          .act_out   (pe_act_out[i][j]),
+          .sum_out   (pe_sum_out[i][j])
         );
       end
     end
@@ -277,7 +291,7 @@ module mlp_xcel_FCLayerDpath
     else begin
       // Accumulate outputs from the bottom row of PEs at each cycle
       for (int j = 0; j < OUTPUT_CHANNEL; j++) begin
-        pe_accumulated[j] <= pe_accumulated[j] + pe_sum[INPUT_CHANNEL][j];
+        pe_accumulated[j] <= pe_accumulated[j] + pe_sum_out[INPUT_CHANNEL-1][j];
       end
     end
   end
@@ -302,6 +316,7 @@ module mlp_xcel_FCLayerDpath
   logic [7:0]  out_channel;
   logic [17:0] out_value;
   logic [17:0] out_value_array [OUTPUT_CHANNEL-1:0];
+  logic [7:0] output_counter;
   
   assign out_type = MSG_TYPE_OUTPUT;
   
@@ -339,9 +354,6 @@ module mlp_xcel_FCLayerDpath
   
   // Output message
   assign ostream_msg = {out_type, out_batch, out_channel, out_value};
-  
-  // Output counter logic
-  logic [7:0] output_counter;
   
   always_ff @(posedge clk) begin
     if (reset || (clear_accum && all_outputs_done)) begin
