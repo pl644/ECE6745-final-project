@@ -28,12 +28,12 @@ clock_period : 3.0
 #-------------------------------------------------------------------------
 
 tests:
- - ProcXcel_null_rtl_pmx-sim-null-rtl-ubmark-sort-test
+ - ProcXcel_null_rtl_pmx-sim-null-rtl-ubmark-mlp-test
 
 #-------------------------------------------------------------------------
 # evals
 #-------------------------------------------------------------------------
 
 evals:
- - ProcXcel_null_rtl_pmx-sim-null-rtl-ubmark-sort-eval
+ - ProcXcel_null_rtl_pmx-sim-null-rtl-ubmark-mlp-eval
 

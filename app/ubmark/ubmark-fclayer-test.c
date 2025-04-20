@@ -14,16 +14,6 @@
 #define FIXED_MULT(a, b) (((a) * (b)) >> FIXED_POINT_BITS)
 #define FIXED_ABS(x) ((x) < 0 ? -(x) : (x))
 
-// Function prototype for fixed-point implementation
-void ubmark_fclayer_fixed(
-    int* input,
-    int* weights,
-    int* bias,
-    int* output,
-    int batch_size,
-    int input_features,
-    int output_features
-);
 
 // Integer-only printing function for Q4.7 fixed point
 void print_fixed_point(int val) {
