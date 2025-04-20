@@ -97,7 +97,7 @@ class FullyConnected_FL(Component):
   [25:18] - Output Channel Index (max 256)
   [17:0]  - Output Value (18-bit q4.7 fixed-point with extra precision)
   """
-  def construct(s, batch_size=4, input_channel=4, output_channel=2):
+  def construct(s, batch_size=4, input_channel=3, output_channel=2):
     # Interface
     s.istream = IStreamIfc(Bits32)  # Input stream
     s.ostream = OStreamIfc(Bits32)  # Output stream
@@ -167,8 +167,10 @@ class FullyConnected_FL(Component):
           if batch_idx < batch_size and channel_idx < input_channel:
             # Store input value
             s.inputs[batch_idx][channel_idx] @= value_bits
+            # Update input counter using new_count for correct checking.
             tmp_count = s.input_counts[batch_idx]
-            s.input_counts[batch_idx] @= tmp_count + 1
+            new_count = tmp_count + 1
+            s.input_counts[batch_idx] @= new_count
             
             # Check if we've received all inputs for this batch
             if (tmp_count) == input_channel:
